@@ -13,7 +13,7 @@
   "main": "lib/index.js",
   "name": "openai-plugin",
   "scripts": {
-    "test": "jest"
+    "test": "jest --env=jsdom"
   },
   "testEnvironment": "jsdom",
   "type": "module",

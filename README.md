@@ -16,6 +16,10 @@ Run `NODE_OPTIONS=--experimental-vm-modules npm test` to run the tests.
 
 If it complains about jsdom being absent, run `npm install -D jest-environment-jsdom` and try again.
 
+### Testing with JetBrains
+
+https://public.amplenote.com/F4rghypGZSXEjjFLiXQTxxcR
+
 ### Run tests continuously as modifying the plugin
 
 ```bash
