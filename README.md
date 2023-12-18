@@ -2,7 +2,7 @@
 
 AmpleAI Plugin is an [Amplenote plugin](https://www.amplenote.com/help/developing_amplenote_plugins) that adds OpenAI & Ollama interactivity with Amplenote.
 
-[Recent History](https://www.gitclear.com/chart_glimpses/ac650e04-42c2-40e8-9504-2b5667167bf8.png)
+![Recent History](https://www.gitclear.com/chart_glimpses/ac650e04-42c2-40e8-9504-2b5667167bf8.png)
 
 ## Installation
 
