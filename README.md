@@ -32,3 +32,7 @@ NODE_OPTIONS=--experimental-vm-modules npm run test -- --watch
 * https://esbuild.github.io/getting-started/#your-first-bundle
 * https://jestjs.io/
 * https://www.gitclear.com
+
+# Run Ollama
+
+OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve
