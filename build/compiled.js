@@ -143,6 +143,7 @@
   }
 
   // lib/fetch-json.js
+  var streamTimeoutSeconds = 2;
   function shouldStream(plugin2) {
     return !plugin2.constants.isTestEnvironment;
   }
@@ -197,7 +198,60 @@
     return json;
   }
   async function responseTextFromStreamResponse(app, response, aiModel, responseJsonExpected, callback) {
-    const streamTimeoutSeconds = 2;
+    if (typeof global.fetch !== "undefined") {
+      return await streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, callback);
+    } else {
+      return await streamWindowFetch(app, response, aiModel, responseJsonExpected, callback);
+    }
+  }
+  function fetchJson(endpoint, attrs) {
+    attrs = attrs || {};
+    if (!attrs.headers)
+      attrs.headers = {};
+    attrs.headers["Accept"] = "application/json";
+    attrs.headers["Content-Type"] = "application/json";
+    const method = (attrs.method || "GET").toUpperCase();
+    if (attrs.payload) {
+      if (method === "GET") {
+        endpoint = extendUrlWithParameters(endpoint, attrs.payload);
+      } else {
+        attrs.body = JSON.stringify(attrs.payload);
+      }
+    }
+    return fetch(endpoint, attrs).then((response) => {
+      if (response.ok) {
+        return response.json();
+      } else {
+        throw new Error(`Could not fetch ${endpoint}: ${response}`);
+      }
+    });
+  }
+  async function streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, callback) {
+    const responseBody = await response.body;
+    let abort, content;
+    await responseBody.on("readable", () => {
+      let failLoops = 0;
+      let receivedContent = "";
+      while (failLoops < 3) {
+        const chunk = responseBody.read();
+        if (chunk) {
+          failLoops = 0;
+          const decoded = chunk.toString();
+          const responseObject = callback(app, decoded, receivedContent, aiModel, responseJsonExpected);
+          console.debug("responseObject content", responseObject?.receivedContent);
+          ({ abort, receivedContent } = responseObject);
+          if (receivedContent)
+            content = receivedContent;
+          if (abort)
+            break;
+        } else {
+          failLoops += 1;
+        }
+      }
+    });
+    return content;
+  }
+  async function streamWindowFetch(app, response, aiModel, responseJsonExpected, callback) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let error, abort;
@@ -248,28 +302,6 @@
     }
     return receivedContent;
   }
-  function fetchJson(endpoint, attrs) {
-    attrs = attrs || {};
-    if (!attrs.headers)
-      attrs.headers = {};
-    attrs.headers["Accept"] = "application/json";
-    attrs.headers["Content-Type"] = "application/json";
-    const method = (attrs.method || "GET").toUpperCase();
-    if (attrs.payload) {
-      if (method === "GET") {
-        endpoint = extendUrlWithParameters(endpoint, attrs.payload);
-      } else {
-        attrs.body = JSON.stringify(attrs.payload);
-      }
-    }
-    return fetch(endpoint, attrs).then((response) => {
-      if (response.ok) {
-        return response.json();
-      } else {
-        throw new Error(`Could not fetch ${endpoint}: ${response}`);
-      }
-    });
-  }
   function extendUrlWithParameters(basePath, paramObject) {
     let path = basePath;
     if (basePath.indexOf("?") !== -1) {
@@ -277,7 +309,7 @@
     } else {
       path += "?";
     }
-    const deepSerialize = (object, prefix) => {
+    function deepSerialize(object, prefix) {
       const keyValues = [];
       for (let property in object) {
         if (object.hasOwnProperty(property)) {
@@ -289,7 +321,7 @@
         }
       }
       return keyValues.join("&");
-    };
+    }
     path += deepSerialize(paramObject);
     return path;
   }
@@ -440,7 +472,11 @@
         { timeoutSeconds: plugin2.constants.requestTimeoutSeconds, allowResponse, stream }
       );
     } catch (error) {
-      app.alert("Failed to call OpenAI: " + error);
+      if (plugin2.isTestEnvironment) {
+        console.error("Failed to call OpenAI", error);
+      } else {
+        app.alert("Failed to call OpenAI: " + error);
+      }
       return null;
     }
   }
@@ -545,7 +581,7 @@
           scrollToEnd: true
         });
       } else {
-        stop = !!json?.finish_reason?.length;
+        stop = !!json?.finish_reason?.length || !!json?.choices?.[0]?.finish_reason?.length;
         break;
       }
     }
