@@ -330,6 +330,9 @@
   function isJsonEndpoint(promptKey) {
     return !!["rhyming", "thesaurus", "sortGroceriesJson"].find((key) => key === promptKey);
   }
+  function useLongContentContext(promptKey) {
+    return ["continue", "insertTextComplete"].includes(promptKey);
+  }
   function tooDumbForExample(aiModel) {
     const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
     return !smartModel;
@@ -445,7 +448,13 @@
     return await responseFromStreamOrChunk(plugin2, app, response, model, stream, true);
   }
   function streamCallback(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
-    const jsonResponse = JSON.parse(decodedValue.trim());
+    let jsonResponse;
+    try {
+      jsonResponse = JSON.parse(decodedValue.trim());
+    } catch (e) {
+      console.debug("Failed to parse JSON from", decodedValue, "with error", e, "Received content so far is", receivedContent);
+      return { receivedContent };
+    }
     const content = jsonResponse?.message?.content;
     receivedContent += content;
     const userSelection = app.alert(receivedContent, {
@@ -530,6 +539,9 @@
       } catch (e) {
         error = e;
         console.log(`Attempt ${i + 1} failed with`, e, `at ${/* @__PURE__ */ new Date()}. Retrying...`);
+      }
+      if (response?.ok) {
+        break;
       }
     }
     let content;
@@ -682,9 +694,10 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
   function userPromptFromPromptKey(promptKey, promptParams, contentIndex, inputLimit) {
     const { noteContent } = promptParams;
     let boundedContent = noteContent;
-    const noteContentLimit = inputLimit * 0.5;
-    if (noteContent && noteContent.length > noteContentLimit) {
-      boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentLimit);
+    const longContent = useLongContentContext(promptKey);
+    const noteContentCharacterLimit = Math.min(inputLimit * 0.5, longContent ? 5e3 : 1e3);
+    if (noteContent && noteContent.length > noteContentCharacterLimit) {
+      boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit);
     }
     boundedContent = boundedContent.replace(/<!--\s\{[^}]+\}\s-->/g, "");
     let userPrompts;
@@ -790,8 +803,8 @@ ${noteContent}`,
         const pluginNameIndex = content.indexOf(PLUGIN_NAME);
         contentIndex = pluginNameIndex === -1 ? contentLimit * 0.5 : pluginNameIndex;
       }
-      const startIndex = Math.max(0, Math.round(contentIndex - contentLimit * 0.5));
-      const endIndex = Math.min(content.length, Math.round(contentIndex + contentLimit * 0.5));
+      const startIndex = Math.max(0, Math.round(contentIndex - contentLimit * 0.75));
+      const endIndex = Math.min(content.length, Math.round(contentIndex + contentLimit * 0.25));
       content = content.substring(startIndex, endIndex);
     }
     return content;
