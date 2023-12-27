@@ -331,7 +331,8 @@
     return !!["rhyming", "thesaurus", "sortGroceriesJson"].find((key) => key === promptKey);
   }
   function tooDumbForExample(aiModel) {
-    return ["llama2"].includes(aiModel);
+    const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
+    return !smartModel;
   }
   function frequencyPenaltyFromPromptKey(promptKey) {
     if (["rhyming", "thesaurus"].find((key) => key === promptKey)) {
@@ -838,7 +839,13 @@ ${noteContent}`,
         actions.push({ icon: "settings", label: `Try ${modelLabel}${preferredModels.length <= 2 && model === modelUsed ? " again" : ""}` });
       });
       const primaryAction = { icon: "post_add", label: "Accept" };
-      const selectedValue = await app.alert(response, { actions, preface: `Suggested by ${modelUsed}`, primaryAction });
+      let responseAsText = response, jsonResponse = false;
+      if (typeof response === "object") {
+        jsonResponse = true;
+        responseAsText = JSON.stringify(response);
+      }
+      const selectedValue = await app.alert(responseAsText, { actions, preface: `${jsonResponse ? "JSON response s" : "S"}uggested by ${modelUsed}
+Will be parsed & applied after your preliminary approval`, primaryAction });
       console.debug("User chose", selectedValue, "from", actions);
       if (selectedValue === -1) {
         return response;
