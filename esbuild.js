@@ -8,6 +8,7 @@ const result = await esbuild.build({
     entryPoints: [`lib/plugin.js`],
     bundle: true,
     format: "iife",
+    // minify: true,
     outfile: "build/compiled.js",
     packages: "external",
     platform: "node",
