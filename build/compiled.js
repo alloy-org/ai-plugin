@@ -198,7 +198,7 @@
     return json;
   }
   async function responseTextFromStreamResponse(app, response, aiModel, responseJsonExpected, callback) {
-    if (typeof global.fetch !== "undefined") {
+    if (typeof global !== "undefined" && typeof global.fetch !== "undefined") {
       return await streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, callback);
     } else {
       return await streamWindowFetch(app, response, aiModel, responseJsonExpected, callback);
