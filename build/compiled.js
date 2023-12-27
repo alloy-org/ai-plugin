@@ -1,34 +1,4 @@
 (() => {
-  var __create = Object.create;
-  var __defProp = Object.defineProperty;
-  var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
-  var __getOwnPropNames = Object.getOwnPropertyNames;
-  var __getProtoOf = Object.getPrototypeOf;
-  var __hasOwnProp = Object.prototype.hasOwnProperty;
-  var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
-    get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
-  }) : x)(function(x) {
-    if (typeof require !== "undefined")
-      return require.apply(this, arguments);
-    throw new Error('Dynamic require of "' + x + '" is not supported');
-  });
-  var __copyProps = (to, from, except, desc) => {
-    if (from && typeof from === "object" || typeof from === "function") {
-      for (let key of __getOwnPropNames(from))
-        if (!__hasOwnProp.call(to, key) && key !== except)
-          __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-    }
-    return to;
-  };
-  var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-    // If the importer is in node compatibility mode or this is not an ESM
-    // file that has been converted to a CommonJS file using a Babel-
-    // compatible transform (i.e. "__esModule" has not been set), then set
-    // "default" to the CommonJS "module.exports" for node compatibility.
-    isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-    mod
-  ));
-
   // lib/constants.js
   var KILOBYTE = 1024;
   var TOKEN_CHARACTERS = 4;
@@ -173,7 +143,6 @@
   }
 
   // lib/fetch-json.js
-  var import_isomorphic_fetch = __toESM(__require("isomorphic-fetch"), 1);
   function shouldStream(plugin2) {
     return !plugin2.constants.isTestEnvironment;
   }
@@ -293,7 +262,7 @@
         attrs.body = JSON.stringify(attrs.payload);
       }
     }
-    return (0, import_isomorphic_fetch.default)(endpoint, attrs).then((response) => {
+    return fetch(endpoint, attrs).then((response) => {
       if (response.ok) {
         return response.json();
       } else {
@@ -324,9 +293,6 @@
     path += deepSerialize(paramObject);
     return path;
   }
-
-  // lib/fetch-ollama.js
-  var import_isomorphic_fetch2 = __toESM(__require("isomorphic-fetch"), 1);
 
   // lib/prompt-api-params.js
   function isJsonEndpoint(promptKey) {
@@ -385,7 +351,7 @@
   async function responseFromChat(plugin2, app, model, messages, stream) {
     if (plugin2.isTestEnvironment)
       console.log("Calling Ollama with", model, "and stream", stream);
-    const response = await (0, import_isomorphic_fetch2.default)(`${OLLAMA_URL}/api/chat`, {
+    const response = await fetch(`${OLLAMA_URL}/api/chat`, {
       body: JSON.stringify({ model, messages, stream }),
       method: "POST"
     });
@@ -432,7 +398,7 @@
     let response;
     try {
       await Promise.race([
-        response = await (0, import_isomorphic_fetch2.default)(`${OLLAMA_URL}/api/generate`, {
+        response = await fetch(`${OLLAMA_URL}/api/generate`, {
           body: JSON.stringify(jsonQuery),
           method: "POST"
         }),
@@ -461,7 +427,6 @@
   }
 
   // lib/fetch-openai.js
-  var import_isomorphic_fetch3 = __toESM(__require("isomorphic-fetch"), 1);
   async function callOpenAI(plugin2, app, model, messages, promptKey, { allowResponse = null } = {}) {
     model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
     const stream = shouldStream(plugin2);
@@ -513,7 +478,7 @@
           body.response_format = { type: "json_object" };
         console.debug("Sending OpenAI", body, "query at", /* @__PURE__ */ new Date());
         response = await Promise.race([
-          (0, import_isomorphic_fetch3.default)("https://api.openai.com/v1/chat/completions", {
+          fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${apiKey}`,
