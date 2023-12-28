@@ -142,6 +142,29 @@
     return newCount === originalCount;
   }
 
+  // lib/prompt-api-params.js
+  function isJsonEndpoint(promptKey) {
+    return !!["rhyming", "thesaurus", "sortGroceriesJson"].find((key) => key === promptKey);
+  }
+  function useLongContentContext(promptKey) {
+    return ["continue", "insertTextComplete"].includes(promptKey);
+  }
+  function tooDumbForExample(aiModel) {
+    const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
+    return !smartModel;
+  }
+  function frequencyPenaltyFromPromptKey(promptKey) {
+    if (["rhyming", "thesaurus"].find((key) => key === promptKey)) {
+      return 2;
+    } else if (["answer"].find((key) => key === promptKey)) {
+      return 1;
+    } else if (["revise", "sortGroceriesJson", "sortGroceriesText"].find((key) => key === promptKey)) {
+      return -1;
+    } else {
+      return 0;
+    }
+  }
+
   // lib/fetch-json.js
   var streamTimeoutSeconds = 2;
   function shouldStream(plugin2) {
@@ -197,12 +220,36 @@
     }
     return json;
   }
-  async function responseTextFromStreamResponse(app, response, aiModel, responseJsonExpected, callback) {
-    if (typeof global !== "undefined" && typeof global.fetch !== "undefined") {
-      return await streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, callback);
+  async function responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds = 10 } = {}) {
+    const jsonResponseExpected = isJsonEndpoint(promptKey);
+    let result;
+    if (streamCallback) {
+      result = await responseTextFromStreamResponse(app, response, model, jsonResponseExpected, streamCallback);
+      app.alert(result, { scrollToEnd: true });
     } else {
-      return await streamWindowFetch(app, response, aiModel, responseJsonExpected, callback);
+      try {
+        await Promise.race([
+          new Promise(async (resolve, _) => {
+            const jsonResponse = await response.json();
+            result = jsonResponse?.choices?.message?.content || jsonResponse?.message?.content || jsonResponse?.response;
+            resolve(result);
+          }),
+          new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Ollama timeout")), timeoutSeconds * 1e3)
+          )
+        ]);
+      } catch (e) {
+        console.error("Failed to parse response from", model, "error", e);
+        throw e;
+      }
     }
+    if (jsonResponseExpected) {
+      result = extractJsonFromString(result);
+    }
+    if (!allowResponse || allowResponse(result)) {
+      return result;
+    }
+    return null;
   }
   function fetchJson(endpoint, attrs) {
     attrs = attrs || {};
@@ -225,6 +272,13 @@
         throw new Error(`Could not fetch ${endpoint}: ${response}`);
       }
     });
+  }
+  async function responseTextFromStreamResponse(app, response, aiModel, responseJsonExpected, streamCallback) {
+    if (typeof global !== "undefined" && typeof global.fetch !== "undefined") {
+      return await streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, streamCallback);
+    } else {
+      return await streamWindowFetch(app, response, aiModel, responseJsonExpected, streamCallback);
+    }
   }
   async function streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, callback) {
     const responseBody = await response.body;
@@ -326,38 +380,33 @@
     return path;
   }
 
-  // lib/prompt-api-params.js
-  function isJsonEndpoint(promptKey) {
-    return !!["rhyming", "thesaurus", "sortGroceriesJson"].find((key) => key === promptKey);
-  }
-  function useLongContentContext(promptKey) {
-    return ["continue", "insertTextComplete"].includes(promptKey);
-  }
-  function tooDumbForExample(aiModel) {
-    const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
-    return !smartModel;
-  }
-  function frequencyPenaltyFromPromptKey(promptKey) {
-    if (["rhyming", "thesaurus"].find((key) => key === promptKey)) {
-      return 2;
-    } else if (["answer"].find((key) => key === promptKey)) {
-      return 1;
-    } else if (["revise", "sortGroceriesJson", "sortGroceriesText"].find((key) => key === promptKey)) {
-      return -1;
-    } else {
-      return 0;
-    }
-  }
-
   // lib/fetch-ollama.js
-  async function callOllama(plugin2, app, model, messages, promptKey) {
+  async function callOllama(plugin2, app, model, messages, promptKey, allowResponse) {
     const stream = shouldStream(plugin2);
     const jsonEndpoint = isJsonEndpoint(promptKey);
     let response;
+    const streamCallback = stream ? streamAccumulate : null;
     if (jsonEndpoint) {
-      response = await responsePromiseFromGenerate(plugin2, app, model, messages, stream);
+      response = await responsePromiseFromGenerate(
+        app,
+        messages,
+        model,
+        promptKey,
+        streamCallback,
+        allowResponse,
+        plugin2.constants.requestTimeoutSeconds
+      );
     } else {
-      response = await responseFromChat(plugin2, app, model, messages, stream);
+      response = await responseFromChat(
+        app,
+        messages,
+        model,
+        promptKey,
+        streamCallback,
+        allowResponse,
+        plugin2.constants.requestTimeoutSeconds,
+        { isTestEnvironment: plugin2.isTestEnvironment }
+      );
     }
     console.debug("Ollama", model, "model sez", response);
     return response;
@@ -384,53 +433,23 @@
       console.log("Error trying to fetch Ollama versions: ", error, "Are you sure Ollama was started with 'OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve'");
     });
   }
-  async function responseFromChat(plugin2, app, model, messages, stream) {
-    if (plugin2.isTestEnvironment)
-      console.log("Calling Ollama with", model, "and stream", stream);
+  async function responseFromChat(app, messages, model, promptKey, streamCallback, allowResponse, timeoutSeconds, { isTestEnvironment = false } = {}) {
+    if (isTestEnvironment)
+      console.log("Calling Ollama with", model, "and streamCallback", streamCallback);
     const response = await fetch(`${OLLAMA_URL}/api/chat`, {
-      body: JSON.stringify({ model, messages, stream }),
+      body: JSON.stringify({ model, messages, stream: !!streamCallback }),
       method: "POST"
     });
     if (response) {
-      return await responseFromStreamOrChunk(plugin2, app, response, model, stream, false);
+      return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
     } else {
-      throw new Error("Failed to call Ollama with", model, messages, "and stream", stream, "response was", response, "at", /* @__PURE__ */ new Date());
+      throw new Error("Failed to call Ollama with", model, messages, "and stream", !!streamCallback, "response was", response, "at", /* @__PURE__ */ new Date());
     }
   }
-  async function responseFromStreamOrChunk(plugin2, app, response, model, stream, responseJsonExpected) {
-    let responseContent = "";
-    let responseObject;
-    if (stream) {
-      responseContent = await responseTextFromStreamResponse(app, response, model, responseJsonExpected, streamCallback);
-      if (responseContent?.length) {
-        app.alert(responseContent, { scrollToEnd: true });
-      } else {
-        return null;
-      }
-    } else {
-      let json;
-      try {
-        await Promise.race([
-          json = await response.json(),
-          new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Ollama timeout")), plugin2.constants.requestTimeoutSeconds * 1e3)
-          )
-        ]);
-      } catch (e) {
-        throw e;
-      }
-      if (responseJsonExpected) {
-        responseObject = extractJsonFromString(json.response);
-      } else {
-        responseObject = json?.message?.content;
-      }
-    }
-    return responseObject;
-  }
-  async function responsePromiseFromGenerate(plugin2, app, model, messages, stream) {
+  async function responsePromiseFromGenerate(app, messages, model, promptKey, streamCallback, allowResponse, timeoutSeconds) {
     const jsonQuery = jsonFromMessages(messages);
     jsonQuery.model = model;
-    jsonQuery.stream = stream;
+    jsonQuery.stream = !!streamCallback;
     let response;
     try {
       await Promise.race([
@@ -439,15 +458,23 @@
           method: "POST"
         }),
         new Promise(
-          (_, reject) => setTimeout(() => reject(new Error("Ollama Generate Timeout")), plugin2.constants.requestTimeoutSeconds * 1e3)
+          (_, reject) => setTimeout(() => reject(new Error("Ollama Generate Timeout")), timeoutSeconds * 1e3)
         )
       ]);
     } catch (e) {
       throw e;
     }
-    return await responseFromStreamOrChunk(plugin2, app, response, model, stream, true);
+    return await responseFromStreamOrChunk(
+      app,
+      response,
+      model,
+      promptKey,
+      streamCallback,
+      allowResponse,
+      { timeoutSeconds }
+    );
   }
-  function streamCallback(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
+  function streamAccumulate(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let jsonResponse;
     try {
       jsonResponse = JSON.parse(decodedValue.trim());
@@ -455,23 +482,25 @@
       console.debug("Failed to parse JSON from", decodedValue, "with error", e, "Received content so far is", receivedContent);
       return { receivedContent };
     }
-    const content = jsonResponse?.message?.content;
-    receivedContent += content;
-    const userSelection = app.alert(receivedContent, {
-      actions: [{ icon: "pending", label: "Generating response" }],
-      preface: `${aiModel} is generating ${jsonResponseExpected ? "JSON " : ""}response...`,
-      scrollToEnd: true
-    });
-    if (userSelection === 0) {
-      console.error("User chose to abort stream. Todo: return abort here?");
+    const content = jsonResponse?.message?.content || jsonResponse?.response;
+    if (content) {
+      receivedContent += content;
+      const userSelection = app.alert(receivedContent, {
+        actions: [{ icon: "pending", label: "Generating response" }],
+        preface: `${aiModel} is generating ${jsonResponseExpected ? "JSON " : ""}response...`,
+        scrollToEnd: true
+      });
+      if (userSelection === 0) {
+        console.error("User chose to abort stream. Todo: return abort here?");
+      }
     }
     return { abort: jsonResponse.done, receivedContent };
   }
 
   // lib/fetch-openai.js
-  async function callOpenAI(plugin2, app, model, messages, promptKey, { allowResponse = null } = {}) {
+  async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse) {
     model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
-    const stream = shouldStream(plugin2);
+    const streamCallback = shouldStream(plugin2) ? streamAccumulate2 : null;
     try {
       return await requestWithRetry(
         app,
@@ -479,7 +508,9 @@
         messages,
         apiKeyFromApp(plugin2, app),
         promptKey,
-        { timeoutSeconds: plugin2.constants.requestTimeoutSeconds, allowResponse, stream }
+        streamCallback,
+        allowResponse,
+        { timeoutSeconds: plugin2.constants.requestTimeoutSeconds }
       );
     } catch (error) {
       if (plugin2.isTestEnvironment) {
@@ -504,10 +535,8 @@
       return null;
     }
   }
-  async function requestWithRetry(app, model, messages, apiKey, promptKey, {
-    allowResponse = null,
+  async function requestWithRetry(app, model, messages, apiKey, promptKey, streamCallback, allowResponse, {
     retries = 3,
-    stream = null,
     timeoutSeconds = 30
   } = {}) {
     let error, response;
@@ -518,7 +547,7 @@
     const jsonResponseExpected = isJsonEndpoint(promptKey);
     for (let i = 0; i < retries; i++) {
       try {
-        const body = { model, messages, stream };
+        const body = { model, messages, stream: !!streamCallback };
         body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
         if (jsonResponseExpected && model.includes("gpt-4"))
           body.response_format = { type: "json_object" };
@@ -544,23 +573,8 @@
         break;
       }
     }
-    let content;
     if (response?.ok) {
-      let result = "";
-      if (stream) {
-        result = await responseTextFromStreamResponse(app, response, model, jsonResponseExpected, streamCallback2);
-        app.alert(result, { scrollToEnd: true });
-      } else {
-        const unstreamedResult = await response.json();
-        ({ choices: [{ message: { content } }] } = unstreamedResult);
-        result = content;
-      }
-      if (jsonResponseExpected) {
-        result = extractJsonFromString(result);
-      }
-      if (!allowResponse || allowResponse(result)) {
-        return result;
-      }
+      return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
     } else if (!response) {
       app.alert("Failed to call OpenAI: " + error);
       return null;
@@ -575,7 +589,7 @@
       }
     }
   }
-  function streamCallback2(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
+  function streamAccumulate2(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let stop = false;
     const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
     for (const jsonString of responses) {
@@ -931,9 +945,9 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
   }
   function responseFromPrompts(plugin2, app, aiModel, promptKey, messages, { allowResponse = null } = {}) {
     if (isModelOllama(aiModel)) {
-      return callOllama(plugin2, app, aiModel, messages, promptKey);
+      return callOllama(plugin2, app, aiModel, messages, promptKey, allowResponse);
     } else {
-      return callOpenAI(plugin2, app, aiModel, messages, promptKey, { allowResponse });
+      return callOpenAI(plugin2, app, aiModel, messages, promptKey, allowResponse);
     }
   }
   function includingFallbackModels(plugin2, app, candidateAiModels) {
