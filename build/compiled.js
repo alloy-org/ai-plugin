@@ -71,77 +71,6 @@
     }
   }
 
-  // lib/functions/groceries.js
-  function groceryArrayFromContent(content) {
-    const lines = content.split("\n");
-    const groceryLines = lines.filter((line) => line.match(/^[-*\[]\s/));
-    const groceryArray = groceryLines.map((line) => line.replace(/^[-*\[\]\s]+/g, "").replace(/<!--.*-->/g, "").trim());
-    return groceryArray;
-  }
-  async function groceryContentFromJsonOrText(plugin2, app, noteUUID, groceryArray, aiModels, promptResponse) {
-    const jsonModels = await aiModels(plugin2, app, "sortGroceriesJson");
-    if (jsonModels.length) {
-      const confirmation = groceryCountJsonConfirmation.bind(null, groceryArray.length);
-      const jsonGroceries = await promptResponse(
-        plugin2,
-        app,
-        noteUUID,
-        "sortGroceriesJson",
-        { groceryArray },
-        { allowResponse: confirmation }
-      );
-      if (typeof jsonGroceries === "object") {
-        return noteContentFromGroceryJsonResponse(jsonGroceries);
-      }
-    } else {
-      const sortedListContent = await promptResponse(
-        plugin2,
-        app,
-        noteUUID,
-        "sortGroceriesText",
-        { groceryArray },
-        { allowResponse: groceryCountTextConfirmation.bind(null, groceryArray.length) }
-      );
-      if (sortedListContent?.length) {
-        return noteContentFromGroceryTextResponse(sortedListContent);
-      }
-    }
-  }
-  function noteContentFromGroceryJsonResponse(jsonGroceries) {
-    let text = "";
-    for (const aisle of Object.keys(jsonGroceries)) {
-      const groceries = jsonGroceries[aisle];
-      text += `# ${aisle}
-`;
-      groceries.forEach((grocery) => {
-        text += `- [ ] ${grocery}
-`;
-      });
-      text += "\n";
-    }
-    return text;
-  }
-  function noteContentFromGroceryTextResponse(text) {
-    text = text.replace(/^[\\-]{3,100}/g, "");
-    text = text.replace(/^([-\\*]|\[\s\])\s/g, "- [ ] ");
-    text = text.replace(/^[\s]*```.*/g, "");
-    return text.trim();
-  }
-  function groceryCountJsonConfirmation(originalCount, proposedJson) {
-    if (!proposedJson || typeof proposedJson !== "object")
-      return false;
-    const newCount = Object.values(proposedJson).reduce((sum, array) => sum + array.length, 0);
-    console.debug("Original list had", originalCount, "items, AI-proposed list appears to have", newCount, "items", newCount === originalCount ? "Accepting response" : "Rejecting response");
-    return newCount === originalCount;
-  }
-  function groceryCountTextConfirmation(originalCount, proposedContent) {
-    if (!proposedContent?.length)
-      return false;
-    const newCount = proposedContent.match(/^[-*\s]*\[[\s\]]+[\w]/gm)?.length || 0;
-    console.debug("Original list had", originalCount, "items, AI-proposed list appears to have", newCount, "items", newCount === originalCount ? "Accepting response" : "Rejecting response");
-    return newCount === originalCount;
-  }
-
   // lib/prompt-api-params.js
   function isJsonEndpoint(promptKey) {
     return !!["rhyming", "thesaurus", "sortGroceriesJson"].find((key) => key === promptKey);
@@ -492,7 +421,12 @@
         console.debug("Failed to parse JSON from", decodedValue, "with error", e, "Received content so far is", receivedContent);
         return { receivedContent };
       }
-      content += jsonResponse?.message?.content || jsonResponse?.response;
+      const responseContent = jsonResponse?.message?.content || jsonResponse?.response;
+      if (responseContent) {
+        content += responseContent;
+      } else {
+        console.debug("No response content found in decodedValue response", decodedValue);
+      }
     }
     if (content) {
       receivedContent += content;
@@ -1011,6 +945,77 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     }
   }
 
+  // lib/functions/groceries.js
+  function groceryArrayFromContent(content) {
+    const lines = content.split("\n");
+    const groceryLines = lines.filter((line) => line.match(/^[-*\[]\s/));
+    const groceryArray = groceryLines.map((line) => line.replace(/^[-*\[\]\s]+/g, "").replace(/<!--.*-->/g, "").trim());
+    return groceryArray;
+  }
+  async function groceryContentFromJsonOrText(plugin2, app, noteUUID, groceryArray) {
+    const jsonModels = await recommendedAiModels(plugin2, app, "sortGroceriesJson");
+    if (jsonModels.length) {
+      const confirmation = groceryCountJsonConfirmation.bind(null, groceryArray.length);
+      const jsonGroceries = await notePromptResponse(
+        plugin2,
+        app,
+        noteUUID,
+        "sortGroceriesJson",
+        { groceryArray },
+        { allowResponse: confirmation }
+      );
+      if (typeof jsonGroceries === "object") {
+        return noteContentFromGroceryJsonResponse(jsonGroceries);
+      }
+    } else {
+      const sortedListContent = await notePromptResponse(
+        plugin2,
+        app,
+        noteUUID,
+        "sortGroceriesText",
+        { groceryArray },
+        { allowResponse: groceryCountTextConfirmation.bind(null, groceryArray.length) }
+      );
+      if (sortedListContent?.length) {
+        return noteContentFromGroceryTextResponse(sortedListContent);
+      }
+    }
+  }
+  function noteContentFromGroceryJsonResponse(jsonGroceries) {
+    let text = "";
+    for (const aisle of Object.keys(jsonGroceries)) {
+      const groceries = jsonGroceries[aisle];
+      text += `# ${aisle}
+`;
+      groceries.forEach((grocery) => {
+        text += `- [ ] ${grocery}
+`;
+      });
+      text += "\n";
+    }
+    return text;
+  }
+  function noteContentFromGroceryTextResponse(text) {
+    text = text.replace(/^[\\-]{3,100}/g, "");
+    text = text.replace(/^([-\\*]|\[\s\])\s/g, "- [ ] ");
+    text = text.replace(/^[\s]*```.*/g, "");
+    return text.trim();
+  }
+  function groceryCountJsonConfirmation(originalCount, proposedJson) {
+    if (!proposedJson || typeof proposedJson !== "object")
+      return false;
+    const newCount = Object.values(proposedJson).reduce((sum, array) => sum + array.length, 0);
+    console.debug("Original list had", originalCount, "items, AI-proposed list appears to have", newCount, "items", newCount === originalCount ? "Accepting response" : "Rejecting response");
+    return newCount === originalCount;
+  }
+  function groceryCountTextConfirmation(originalCount, proposedContent) {
+    if (!proposedContent?.length)
+      return false;
+    const newCount = proposedContent.match(/^[-*\s]*\[[\s\]]+[\w]/gm)?.length || 0;
+    console.debug("Original list had", originalCount, "items, AI-proposed list appears to have", newCount, "items", newCount === originalCount ? "Accepting response" : "Rejecting response");
+    return newCount === originalCount;
+  }
+
   // lib/plugin.js
   var plugin = {
     // --------------------------------------------------------------------------------------
@@ -1093,7 +1098,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         run: async function(app, noteUUID) {
           const startContent = await app.getNoteContent({ uuid: noteUUID });
           const groceryArray = groceryArrayFromContent(startContent);
-          const sortedGroceryContent = await groceryContentFromJsonOrText(this, app, noteUUID, groceryArray, recommendedAiModels, notePromptResponse);
+          const sortedGroceryContent = await groceryContentFromJsonOrText(this, app, noteUUID, groceryArray);
           if (sortedGroceryContent) {
             app.replaceNoteContent({ uuid: noteUUID }, sortedGroceryContent);
           }
@@ -1245,7 +1250,6 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         console.debug("Inserting trimmed response text:", trimmedAnswer);
         return trimmedAnswer;
       } else {
-        app.alert("Could not determine an answer to the provided question");
         return null;
       }
     }
