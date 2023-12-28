@@ -1,0 +1,6 @@
+#!/usr/bin/env ruby
+`npm run build`
+`git add .`
+`git commit -m "Build"`
+`git push`
+puts "Successfully uploaded build"

@@ -408,7 +408,7 @@
         { isTestEnvironment: plugin2.isTestEnvironment }
       );
     }
-    console.debug("Ollama", model, "model sez", response);
+    console.debug("Ollama", model, "model sez:\n", response);
     return response;
   }
   async function ollamaAvailableModels(plugin2, alertOnEmptyApp = null) {
@@ -439,7 +439,7 @@
     let response;
     try {
       await Promise.race([
-        response = fetch(`${OLLAMA_URL}/api/chat`, {
+        response = await fetch(`${OLLAMA_URL}/api/chat`, {
           body: JSON.stringify({ model, messages, stream: !!streamCallback }),
           method: "POST"
         }),
@@ -448,7 +448,7 @@
     } catch (e) {
       throw e;
     }
-    if (response) {
+    if (response?.ok) {
       return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
     } else {
       throw new Error("Failed to call Ollama with", model, messages, "and stream", !!streamCallback, "response was", response, "at", /* @__PURE__ */ new Date());
@@ -734,10 +734,10 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
         const replaceToken = promptKey === "insertTextComplete" ? `${PLUGIN_NAME}: Complete` : `${PLUGIN_NAME}: Continue`;
         if (!boundedContent.includes(replaceToken) && noteContent.includes(replaceToken)) {
           contentIndex = noteContent.indexOf(replaceToken);
-          console.debug("Couldn't find", replaceToken, "in", boundedContent, "so truncating to", relevantContentFromContent(noteContent, contentIndex, noteContentLimit), "given", noteContentLimit);
-          boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentLimit);
+          console.debug("Couldn't find", replaceToken, "in", boundedContent, "so truncating to", relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit), "given", noteContentCharacterLimit);
+          boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit);
         }
-        console.debug("Note content", noteContent, "bounded content", boundedContent, "replace token", replaceToken, "content index", contentIndex, "with noteContentLimit", noteContentLimit);
+        console.debug("Note content", noteContent, "bounded content", boundedContent, "replace token", replaceToken, "content index", contentIndex, "with noteContentCharacterLimit", noteContentCharacterLimit);
         tokenAndSurroundingContent = `~~~
 ${boundedContent.replace(`{${replaceToken}}`, "<token>")}
 ~~~`;
@@ -936,7 +936,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     allowResponse = null
   } = {}) {
     preferredModels = (preferredModels || await recommendedAiModels(plugin2, app, promptKey)).filter((n) => n);
-    console.debug("Starting to query with preferredModels", preferredModels);
+    console.debug("Starting to query", promptKey, "with preferredModels", preferredModels);
     for (const aiModel of preferredModels) {
       const inputLimit = isModelOllama(aiModel) ? OLLAMA_TOKEN_CHARACTER_LIMIT : openAiTokenLimit(aiModel);
       const suppressExample = tooDumbForExample(aiModel);
