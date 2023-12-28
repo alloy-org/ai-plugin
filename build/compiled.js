@@ -483,14 +483,17 @@
     );
   }
   function streamAccumulate(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
-    let jsonResponse;
-    try {
-      jsonResponse = JSON.parse(decodedValue.trim());
-    } catch (e) {
-      console.debug("Failed to parse JSON from", decodedValue, "with error", e, "Received content so far is", receivedContent);
-      return { receivedContent };
+    let jsonResponse, content = "";
+    const responses = decodedValue.replace(/}\n\{/g, "} \n{").split(" \n");
+    for (const response in responses) {
+      try {
+        jsonResponse = JSON.parse(decodedValue.trim());
+      } catch (e) {
+        console.debug("Failed to parse JSON from", decodedValue, "with error", e, "Received content so far is", receivedContent);
+        return { receivedContent };
+      }
+      content += jsonResponse?.message?.content || jsonResponse?.response;
     }
-    const content = jsonResponse?.message?.content || jsonResponse?.response;
     if (content) {
       receivedContent += content;
       const userSelection = app.alert(receivedContent, {
@@ -807,13 +810,13 @@ Return the EXACT SAME ${groceryArray.length} groceries from the "groceries" key,
 ${noteContent}`,
       thesaurus: ({ noteContent, text }) => [
         JSON.stringify({
+          instruction: `Respond with a JSON object containing ONLY ONE KEY called "result". The value for the "result" key should be a 10-element array of the best words or phrases to replace "${text}" while remaining consistent with the included "replaceWordContext" markdown document.`,
+          replaceWord: text,
+          replaceWordContext: noteContent.replace(text, `<replaceWord>${text}</replaceWord>`),
           example: {
             input: { replaceWord: "helpful", replaceWordContext: "Mother always said that I should be <replaceWord>helpful</replaceWord> with my coworkers" },
             response: { result: ["useful", "friendly", "constructive", "cooperative", "sympathetic", "supportive", "kind", "considerate", "beneficent", "accommodating"] }
-          },
-          instruction: `Respond with a JSON object containing ONLY ONE KEY called "result". The value for the "result" key should be a 10-element array of the best words or phrases to replace "${text}" while remaining consistent with the included "replaceWordContext" markdown document.`,
-          replaceWord: text,
-          replaceWordContext: noteContent.replace(text, `<replaceWord>${text}</replaceWord>`)
+          }
         })
       ]
     };
