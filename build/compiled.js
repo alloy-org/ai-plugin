@@ -220,7 +220,7 @@
     }
     return json;
   }
-  async function responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds = 10 } = {}) {
+  async function responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds = 30 } = {}) {
     const jsonResponseExpected = isJsonEndpoint(promptKey);
     let result;
     if (streamCallback) {
@@ -231,7 +231,7 @@
         await Promise.race([
           new Promise(async (resolve, _) => {
             const jsonResponse = await response.json();
-            result = jsonResponse?.choices?.message?.content || jsonResponse?.message?.content || jsonResponse?.response;
+            result = jsonResponse?.choices?.at(0)?.message?.content || jsonResponse?.message?.content || jsonResponse?.response;
             resolve(result);
           }),
           new Promise(
@@ -436,10 +436,18 @@
   async function responseFromChat(app, messages, model, promptKey, streamCallback, allowResponse, timeoutSeconds, { isTestEnvironment = false } = {}) {
     if (isTestEnvironment)
       console.log("Calling Ollama with", model, "and streamCallback", streamCallback);
-    const response = await fetch(`${OLLAMA_URL}/api/chat`, {
-      body: JSON.stringify({ model, messages, stream: !!streamCallback }),
-      method: "POST"
-    });
+    let response;
+    try {
+      await Promise.race([
+        response = fetch(`${OLLAMA_URL}/api/chat`, {
+          body: JSON.stringify({ model, messages, stream: !!streamCallback }),
+          method: "POST"
+        }),
+        new Promise((_, reject) => setTimeout(() => reject(new Error("Ollama Generate Timeout")), timeoutSeconds * 1e3))
+      ]);
+    } catch (e) {
+      throw e;
+    }
     if (response) {
       return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
     } else {
@@ -707,7 +715,7 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
   };
   function userPromptFromPromptKey(promptKey, promptParams, contentIndex, inputLimit) {
     const { noteContent } = promptParams;
-    let boundedContent = noteContent;
+    let boundedContent = noteContent || "";
     const longContent = useLongContentContext(promptKey);
     const noteContentCharacterLimit = Math.min(inputLimit * 0.5, longContent ? 5e3 : 1e3);
     if (noteContent && noteContent.length > noteContentCharacterLimit) {
