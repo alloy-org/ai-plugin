@@ -909,6 +909,9 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     if (app.settings[plugin2.constants.labelAiModel]?.trim()) {
       candidateAiModels = app.settings[plugin2.constants.labelAiModel].trim().split(",").map((w) => w.trim()).filter((n) => n);
     }
+    if (plugin2.lastModelUsed) {
+      candidateAiModels.push(plugin2.lastModelUsed);
+    }
     if (!plugin2.noFallbackModels) {
       const ollamaModels = plugin2.ollamaModelsFound || await ollamaAvailableModels(plugin2, app);
       if (ollamaModels && !plugin2.ollamaModelsFound) {
@@ -940,6 +943,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       const messages = promptsFromPromptKey(promptKey, { ...promptParams, suppressExample }, contentIndex, rejectedResponses, inputLimit);
       let response;
       plugin2.callCountByModel[aiModel] = (plugin2.callCountByModel[aiModel] || 0) + 1;
+      plugin2.lastModelUsed = aiModel;
       try {
         response = await responseFromPrompts(plugin2, app, aiModel, promptKey, messages, { allowResponse });
       } catch (e) {
@@ -1017,10 +1021,11 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       requestTimeoutSeconds: 30
     },
     // Plugin-global variables
-    ollamaModelsFound: null,
     callCountByModel: {},
-    noFallbackModels: false,
     errorCountByModel: {},
+    lastModelUsed: null,
+    noFallbackModels: false,
+    ollamaModelsFound: null,
     // --------------------------------------------------------------------------
     appOption: {
       // --------------------------------------------------------------------------
