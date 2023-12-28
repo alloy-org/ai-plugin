@@ -1,6 +1,6 @@
 #!/usr/bin/env ruby
 `npm run build`
 `git add .`
-`git commit -m "Build"`
+`git commit -m "Build compiled by Ruby script"`
 `git push`
-puts "Successfully uploaded build"
+puts "Successfully built & pushed to GitHub"
