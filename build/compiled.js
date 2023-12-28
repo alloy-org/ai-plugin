@@ -615,7 +615,7 @@
       }
     }
     const originalLines = noteContent.split("\n").map((w) => w.trim());
-    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim()) && !/^~~~$/.test(line.trim())).join("\n");
+    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim()) && !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
     console.debug(`Answer originally ${answer.length} length, refined answer ${refinedAnswer.length}. Without repeated lines ${withoutOriginalLines.length} length`);
     return withoutOriginalLines.trim();
   }
