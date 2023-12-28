@@ -78,6 +78,9 @@
   function useLongContentContext(promptKey) {
     return ["continue", "insertTextComplete"].includes(promptKey);
   }
+  function limitContextLines(aiModel, _promptKey) {
+    return !/(gpt-4|gpt-3)/.test(aiModel);
+  }
   function tooDumbForExample(aiModel) {
     const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
     return !smartModel;
@@ -611,15 +614,17 @@
         refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
       }
     }
-    console.debug(`Answer originally "${answer}", refined answer "${refinedAnswer}"`);
-    return refinedAnswer.trim();
+    const originalLines = noteContent.split("\n").map((w) => w.trim());
+    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim()) && !/^~~~$/.test(line.trim())).join("\n");
+    console.debug(`Answer originally ${answer.length} length, refined answer ${refinedAnswer.length}. Without repeated lines ${withoutOriginalLines.length} length`);
+    return withoutOriginalLines.trim();
   }
 
   // lib/prompts.js
-  function promptsFromPromptKey(promptKey, promptParams, contentIndex, rejectedResponses, inputLimit = DEFAULT_CHARACTER_LIMIT) {
+  function promptsFromPromptKey(promptKey, promptParams, contentIndex, rejectedResponses, aiModel, inputLimit = DEFAULT_CHARACTER_LIMIT) {
     let messages = [];
     messages.push({ role: "system", content: systemPromptFromPromptKey(promptKey) });
-    const userPrompt = userPromptFromPromptKey(promptKey, promptParams, contentIndex, inputLimit);
+    const userPrompt = userPromptFromPromptKey(promptKey, promptParams, contentIndex, aiModel, inputLimit);
     if (Array.isArray(userPrompt)) {
       userPrompt.forEach((content) => {
         messages.push({ role: "user", content: truncate(content) });
@@ -650,15 +655,19 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
     summarize: "You are a helpful assistant that summarizes notes that are markdown-formatted.",
     thesaurus: "You are a helpful thesaurus that responds in JSON with an array of alternate word choices that fit the context provided"
   };
-  function userPromptFromPromptKey(promptKey, promptParams, contentIndex, inputLimit) {
+  function userPromptFromPromptKey(promptKey, promptParams, contentIndex, aiModel, inputLimit) {
     const { noteContent } = promptParams;
     let boundedContent = noteContent || "";
     const longContent = useLongContentContext(promptKey);
     const noteContentCharacterLimit = Math.min(inputLimit * 0.5, longContent ? 5e3 : 1e3);
+    boundedContent = boundedContent.replace(/<!--\s\{[^}]+\}\s-->/g, "");
     if (noteContent && noteContent.length > noteContentCharacterLimit) {
       boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit);
     }
-    boundedContent = boundedContent.replace(/<!--\s\{[^}]+\}\s-->/g, "");
+    const limitedLines = limitContextLines(aiModel, promptKey);
+    if (limitedLines && Number.isInteger(contentIndex)) {
+      boundedContent = relevantLinesFromContent(boundedContent, contentIndex);
+    }
     let userPrompts;
     if (["continue", "insertTextComplete", "replaceTextComplete"].find((key) => key === promptKey)) {
       let tokenAndSurroundingContent;
@@ -673,14 +682,14 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
         }
         console.debug("Note content", noteContent, "bounded content", boundedContent, "replace token", replaceToken, "content index", contentIndex, "with noteContentCharacterLimit", noteContentCharacterLimit);
         tokenAndSurroundingContent = `~~~
-${boundedContent.replace(`{${replaceToken}}`, "<token>")}
+${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
 ~~~`;
       }
       userPrompts = [
-        `Respond with text that will replace <token> in the following input markdown document, delimited by ~~~:`,
+        `Respond with text that will replace <replaceToken> in the following input markdown document, delimited by ~~~:`,
         tokenAndSurroundingContent,
         `Your response should be grammatically correct and not repeat the markdown document. DO NOT explain your answer.`,
-        `Most importantly, DO NOT respond with <token> itself and DO NOT repeat word sequences from the markdown document. Be as concise as possible.`
+        `Most importantly, DO NOT respond with <replaceToken> itself and DO NOT repeat word sequences from the markdown document. BE CONCISE.`
       ];
     } else {
       userPrompts = messageArrayFromPrompt(promptKey, { ...promptParams, noteContent: boundedContent });
@@ -768,6 +777,25 @@ ${noteContent}`,
     }
     return content;
   }
+  function relevantLinesFromContent(content, contentIndex) {
+    const maxContextLines = 4;
+    const lines = content.split("\n").filter((l) => l.length);
+    if (lines.length > maxContextLines) {
+      let traverseChar = 0;
+      let targetContentLine = lines.findIndex((line) => {
+        if (traverseChar + line.length > contentIndex)
+          return true;
+        traverseChar += line.length + 1;
+      });
+      if (targetContentLine >= 0) {
+        const startLine = Math.max(0, targetContentLine - Math.floor(maxContextLines * 0.75));
+        const endLine = Math.min(lines.length, targetContentLine + Math.floor(maxContextLines * 0.25));
+        console.debug("Submitting line index", startLine, "through", endLine, "of", lines.length, "lines");
+        content = lines.slice(startLine, endLine).join("\n");
+      }
+    }
+    return content;
+  }
   function systemPromptFromPromptKey(promptKey) {
     const systemPrompts = SYSTEM_PROMPTS;
     return systemPrompts[promptKey] || systemPrompts.defaultPrompt;
@@ -785,13 +813,17 @@ ${noteContent}`,
     confirmInsert = true,
     contentIndex = null,
     rejectedResponses = null,
-    allowResponse = null
+    allowResponse = null,
+    contentIndexText
   } = {}) {
     const note = await app.notes.find(noteUUID);
     const noteContent = await note.content();
     preferredModels = preferredModels || await recommendedAiModels(plugin2, app, promptKey);
     if (!preferredModels.length)
       return;
+    if (!Number.isInteger(contentIndex) && contentIndexText && noteContent) {
+      contentIndex = contentIndexFromParams(contentIndexText, noteContent);
+    }
     const startAt = /* @__PURE__ */ new Date();
     const { response, modelUsed } = await sendQuery(
       plugin2,
@@ -874,7 +906,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     for (const aiModel of preferredModels) {
       const inputLimit = isModelOllama(aiModel) ? OLLAMA_TOKEN_CHARACTER_LIMIT : openAiTokenLimit(aiModel);
       const suppressExample = tooDumbForExample(aiModel);
-      const messages = promptsFromPromptKey(promptKey, { ...promptParams, suppressExample }, contentIndex, rejectedResponses, inputLimit);
+      const messages = promptsFromPromptKey(promptKey, { ...promptParams, suppressExample }, contentIndex, rejectedResponses, aiModel, inputLimit);
       let response;
       plugin2.callCountByModel[aiModel] = (plugin2.callCountByModel[aiModel] || 0) + 1;
       plugin2.lastModelUsed = aiModel;
@@ -943,6 +975,15 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       app.alert(OLLAMA_INSTALL_TEXT);
       return null;
     }
+  }
+  function contentIndexFromParams(contentIndexText, noteContent) {
+    let contentIndex = null;
+    if (contentIndexText) {
+      contentIndex = noteContent.indexOf(contentIndexText);
+    }
+    if (contentIndex === -1)
+      contentIndex = null;
+    return contentIndex;
   }
 
   // lib/functions/groceries.js
@@ -1123,7 +1164,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
             app.context.noteUUID,
             "answerSelection",
             { text },
-            { confirmInsert: true }
+            { confirmInsert: true, contentIndexText: text }
           );
           if (answerPicked) {
             return `${text} ${answerPicked}`;
@@ -1243,9 +1284,16 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     },
     // --------------------------------------------------------------------------
     async _completeText(app, promptKey) {
-      const answer = await notePromptResponse(this, app, app.context.noteUUID, promptKey, {});
+      const replaceToken = promptKey === "continue" ? `${PLUGIN_NAME}: Continue` : `${PLUGIN_NAME}: Complete`;
+      const answer = await notePromptResponse(
+        this,
+        app,
+        app.context.noteUUID,
+        promptKey,
+        {},
+        { contentIndexText: replaceToken }
+      );
       if (answer) {
-        const replaceToken = promptKey === "continue" ? `${PLUGIN_NAME}: Continue` : `${PLUGIN_NAME}: Complete`;
         const trimmedAnswer = await trimNoteContentFromAnswer(app, answer, { replaceToken });
         console.debug("Inserting trimmed response text:", trimmedAnswer);
         return trimmedAnswer;
