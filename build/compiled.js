@@ -441,7 +441,9 @@
     if (app.settings[plugin2.constants.labelApiKey]) {
       return app.settings[plugin2.constants.labelApiKey].trim();
     } else if (app.settings["API Key"]) {
-      return app.settings["API Key"].trim();
+      const deprecatedKey = app.settings["API Key"].trim();
+      app.setSetting(plugin2.constants.labelApiKey, deprecatedKey);
+      return deprecatedKey;
     } else {
       if (plugin2.constants.isTestEnvironment) {
         throw new Error(`Couldnt find an OpenAI key in ${plugin2.constants.labelApiKey}`);
