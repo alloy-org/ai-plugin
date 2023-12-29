@@ -588,9 +588,13 @@
       }
     }
     const originalLines = noteContent.split("\n").map((w) => w.trim());
-    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim()) && !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
-    console.debug(`Answer originally ${answer.length} length, refined answer ${refinedAnswer.length}. Without repeated lines ${withoutOriginalLines.length} length`);
-    return withoutOriginalLines.trim();
+    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim())).join("\n");
+    const withoutJunkLines = cleanTextFromAnswer(withoutOriginalLines);
+    console.debug(`Answer originally ${answer.length} length, refined answer ${refinedAnswer.length}. Without repeated lines ${withoutJunkLines.length} length`);
+    return withoutJunkLines.trim();
+  }
+  function cleanTextFromAnswer(answer) {
+    return answer.split("\n").filter((line) => !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
   }
 
   // lib/prompts.js
@@ -1264,7 +1268,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         { preferredModels, confirmInsert: false }
       );
       if (aiResponse?.length) {
-        const trimmedResponse = trimNoteContentFromAnswer(app, aiResponse);
+        const trimmedResponse = cleanTextFromAnswer(aiResponse);
         const options = [];
         if (noteUUID) {
           options.push(
