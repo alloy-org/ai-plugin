@@ -39,38 +39,6 @@
     return Object.keys(OPENAI_TOKEN_LIMITS);
   }
 
-  // lib/functions/chat.js
-  async function initiateChat(plugin2, app, aiModels, promptFunction) {
-    let messageHistory = [];
-    let promptHistory = [{ message: "What's on your mind?", role: "assistant" }];
-    while (true) {
-      const loopMessages = [];
-      const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.message}`).join("\n\n");
-      const [message, modelToUse] = await app.prompt(conversation, { inputs: [
-        { type: "text", label: "Message to send" },
-        { type: "radio", label: "Send to", options: aiModels.map((model) => ({ label: model.split(":")[0], value: model })) }
-      ] });
-      if (modelToUse) {
-        loopMessages.push({ role: "user", message });
-        const response = promptFunction(this, app, modelToUse, messageHistory);
-        if (response) {
-          loopMessages.push({ role: "assistant", message: `[${modelToUse}] ${response}` });
-          const alertResponse = await app.alert(response, { preface: conversation, actions: [{ icon: "navigate_next", label: "Ask a follow up question" }] });
-          if (alertResponse === 0) {
-            promptHistory = promptHistory.concat(loopMessages);
-            messageHistory = messageHistory.concat(loopMessages);
-          } else {
-            break;
-          }
-        } else {
-          break;
-        }
-      } else {
-        break;
-      }
-    }
-  }
-
   // lib/prompt-api-params.js
   function isJsonEndpoint(promptKey) {
     return !!["rhyming", "thesaurus", "sortGroceriesJson"].find((key) => key === promptKey);
@@ -595,23 +563,28 @@
     const noteUUID = app.context.noteUUID;
     const note = await app.notes.find(noteUUID);
     const noteContent = await note.content();
-    replaceIndex = replaceIndex || noteContent.indexOf(replaceToken);
-    const upToReplaceToken = noteContent.substring(0, replaceIndex - 1);
-    const substring = upToReplaceToken.match(/(?:[\n\r.]|^)(.*)$/)?.[1];
-    const maxSentenceStartLength = 100;
-    const sentenceStart = !substring || substring.length > maxSentenceStartLength ? null : substring;
-    let refinedAnswer = answer.replace(replaceToken, "").trim();
-    if (sentenceStart && sentenceStart.trim().length > 1) {
-      console.debug(`Replacing sentence start fragment: "${sentenceStart}"`);
-      refinedAnswer = refinedAnswer.replace(sentenceStart, "");
-    }
-    const afterTokenIndex = replaceIndex + replaceToken.length;
-    const afterSentence = noteContent.substring(afterTokenIndex + 1, afterTokenIndex + 100).trim();
-    if (afterSentence.length) {
-      const afterSentenceIndex = refinedAnswer.indexOf(afterSentence);
-      if (afterSentenceIndex !== -1) {
-        console.error("OpenAI seems to have returned content after prompt. Truncating");
-        refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
+    let refinedAnswer = answer;
+    if (replaceIndex || replaceToken) {
+      replaceIndex = replaceIndex || noteContent.indexOf(replaceToken);
+      const upToReplaceToken = noteContent.substring(0, replaceIndex - 1);
+      const substring = upToReplaceToken.match(/(?:[\n\r.]|^)(.*)$/)?.[1];
+      const maxSentenceStartLength = 100;
+      const sentenceStart = !substring || substring.length > maxSentenceStartLength ? null : substring;
+      if (replaceToken) {
+        refinedAnswer = answer.replace(replaceToken, "").trim();
+        if (sentenceStart && sentenceStart.trim().length > 1) {
+          console.debug(`Replacing sentence start fragment: "${sentenceStart}"`);
+          refinedAnswer = refinedAnswer.replace(sentenceStart, "");
+        }
+        const afterTokenIndex = replaceIndex + replaceToken.length;
+        const afterSentence = noteContent.substring(afterTokenIndex + 1, afterTokenIndex + 100).trim();
+        if (afterSentence.length) {
+          const afterSentenceIndex = refinedAnswer.indexOf(afterSentence);
+          if (afterSentenceIndex !== -1) {
+            console.error("OpenAI seems to have returned content after prompt. Truncating");
+            refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
+          }
+        }
       }
     }
     const originalLines = noteContent.split("\n").map((w) => w.trim());
@@ -707,7 +680,10 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
   }
   function messageArrayFromPrompt(promptKey, promptParams) {
     const userPrompts = {
-      answer: ({ instruction }) => [`Succinctly answer the following question: ${instruction}`, "Do not explain your answer. Do not mention the question that was asked. Do not include unnecessary punctuation."],
+      answer: ({ instruction }) => [
+        `Succinctly answer the following question: ${instruction}`,
+        "Do not explain your answer. Do not mention the question that was asked. Do not include unnecessary punctuation."
+      ],
       answerSelection: ({ text }) => [text],
       complete: ({ noteContent }) => `Continue the following markdown-formatted content:
 
@@ -802,9 +778,11 @@ ${noteContent}`,
   }
 
   // lib/prompt-strings.js
+  var APP_OPTION_VALUE_USE_PROMPT = "What would you like to do with this result?";
   var NO_MODEL_FOUND_TEXT = `Could not find an available AI to call. Do you want to install and utilize Ollama, or would you prefer using OpenAI?<br><br>For casual-to-intermediate users, we recommend using OpenAI.`;
   var OLLAMA_INSTALL_TEXT = `Rough installation instructions:<br>1. Download Ollama: https://ollama.ai/download<br>2. Install Ollama<br>3. Install one or more LLMs that will fit within the RAM your computer (examples at https://github.com/jmorganca/ollama)<br>4. Ensure that Ollama isn't already running, then start it in the console using "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"<br>You can test whether Ollama is running by invoking Quick Open and running the "${LOOK_UP_OLLAMA_MODEL_ACTION_LABEL}" action`;
   var OPENAI_API_KEY_TEXT = `Paste your OpenAI API key in the field below.<br><br> Once you have an OpenAI account, get your key here: https://platform.openai.com/account/api-keys`;
+  var QUESTION_ANSWER_PROMPT = "What would you like to know?";
 
   // lib/model-picker.js
   var MAX_CANDIDATE_MODELS = 3;
@@ -986,6 +964,44 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     return contentIndex;
   }
 
+  // lib/functions/chat.js
+  async function initiateChat(plugin2, app, aiModels, messageHistory = []) {
+    let promptHistory = [{ message: "What's on your mind?", role: "assistant" }];
+    while (true) {
+      const loopMessages = [];
+      const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.message}`).join("\n\n");
+      const [message, modelToUse] = await app.prompt(conversation, {
+        inputs: [
+          { type: "text", label: "Message to send" },
+          {
+            type: "radio",
+            label: "Send to",
+            options: aiModels.map((model) => ({ label: model, value: model })),
+            value: plugin2.lastModelUsed
+          }
+        ]
+      }, { scrollToBottom: true });
+      if (modelToUse) {
+        loopMessages.push({ role: "user", message });
+        const response = await responseFromPrompts(plugin2, app, modelToUse, "chat", messageHistory);
+        if (response) {
+          loopMessages.push({ role: "assistant", message: `[${modelToUse}] ${response}` });
+          const alertResponse = await app.alert(response, { preface: conversation, actions: [{ icon: "navigate_next", label: "Ask a follow up question" }] });
+          if (alertResponse === 0) {
+            promptHistory = promptHistory.concat(loopMessages);
+            messageHistory = messageHistory.concat(loopMessages);
+          } else {
+            break;
+          }
+        } else {
+          break;
+        }
+      } else {
+        break;
+      }
+    }
+  }
+
   // lib/functions/groceries.js
   function groceryArrayFromContent(content) {
     const lines = content.split("\n");
@@ -1098,15 +1114,36 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       },
       // --------------------------------------------------------------------------
       "Answer": async function(app) {
-        const instruction = await app.prompt("What question would you like answered?");
+        let aiModels = await recommendedAiModels(this, app, "answer");
+        const options = aiModels.map((model) => ({ label: model, value: model }));
+        const [instruction, preferredModel] = await app.prompt(QUESTION_ANSWER_PROMPT, {
+          inputs: [
+            { type: "text", label: "Question", placeholder: "What's the meaning of life in 500 characters or less?" },
+            {
+              type: "radio",
+              label: `AI Model${this.lastModelUsed ? `. Defaults to last used` : ""}`,
+              options,
+              value: this.lastModelUsed
+            }
+          ]
+        });
+        console.debug("Instruction", instruction, "preferredModel", preferredModel);
         if (!instruction)
           return;
-        await this._noteOptionResultPrompt(app, app.context.noteUUID, "answer", { instruction });
+        if (preferredModel)
+          aiModels = [preferredModel].concat(aiModels.filter((model) => model !== preferredModel));
+        return await this._noteOptionResultPrompt(
+          app,
+          app.context.noteUUID,
+          "answer",
+          { instruction },
+          { preferredModels: aiModels }
+        );
       },
       // --------------------------------------------------------------------------
-      "Converse with AI": async function(app) {
-        const aiModels = recommendedAiModels(plugin, app, "chat");
-        await initiateChat(this, app, aiModels, responseFromPrompts);
+      "Converse (chat) with AI": async function(app) {
+        const aiModels = await recommendedAiModels(plugin, app, "chat");
+        await initiateChat(this, app, aiModels);
       }
     },
     // --------------------------------------------------------------------------
@@ -1214,10 +1251,20 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     // Private methods
     // --------------------------------------------------------------------------
     // --------------------------------------------------------------------------
-    async _noteOptionResultPrompt(app, noteUUID, promptKey, promptParams) {
-      const selectedText = await notePromptResponse(this, app, noteUUID, promptKey, promptParams);
-      if (selectedText?.length) {
-        const valueSelected = await app.prompt("What would you like to do with this result?", {
+    async _noteOptionResultPrompt(app, noteUUID, promptKey, promptParams, { preferredModels = null } = {}) {
+      let aiResponse = await notePromptResponse(
+        this,
+        app,
+        noteUUID,
+        promptKey,
+        promptParams,
+        { preferredModels, confirmInsert: false }
+      );
+      if (aiResponse?.length) {
+        const trimmedResponse = trimNoteContentFromAnswer(app, aiResponse);
+        const valueSelected = await app.prompt(`${APP_OPTION_VALUE_USE_PROMPT}
+
+${trimmedResponse || aiResponse}`, {
           inputs: [{
             type: "radio",
             label: "Choose an action",
@@ -1225,22 +1272,30 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
               { label: "Insert at start (prepend)", value: "prepend" },
               { label: "Insert at end (append)", value: "append" },
               { label: "Replace", value: "replace" },
-              { label: "Cancel", value: "cancel" }
-            ]
+              { label: "Ask follow up question", value: "followup" }
+            ],
+            value: "append"
           }]
         });
-        console.debug("User picked", valueSelected, "for response", selectedText);
+        console.debug("User picked", valueSelected, "for response", aiResponse);
         switch (valueSelected) {
           case "prepend":
-            app.insertNoteContent({ uuid: noteUUID }, selectedText);
+            app.insertNoteContent({ uuid: noteUUID }, aiResponse);
             break;
           case "append":
-            app.insertNoteContent({ uuid: noteUUID }, selectedText, { atEnd: true });
+            app.insertNoteContent({ uuid: noteUUID }, aiResponse, { atEnd: true });
             break;
           case "replace":
-            app.replaceNoteContent({ uuid: noteUUID }, selectedText);
+            app.replaceNoteContent({ uuid: noteUUID }, aiResponse);
             break;
+          case "followup":
+            const messages = [
+              { role: "user", message: promptParams.instruction },
+              { role: "assistant", message: trimmedResponse }
+            ];
+            return await initiateChat(this, app, preferredModels, messages);
         }
+        return aiResponse;
       }
     },
     // --------------------------------------------------------------------------
