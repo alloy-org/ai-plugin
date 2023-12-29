@@ -983,7 +983,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       promptHistory = [{ content: "What's on your mind?", role: "assistant" }];
     }
     while (true) {
-      const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.message}`).join("\n\n");
+      const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.content}`).join("\n\n");
       const [userMessage, modelToUse] = await app.prompt(conversation, {
         inputs: [
           { type: "text", label: "Message to send" },
