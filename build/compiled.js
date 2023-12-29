@@ -467,8 +467,9 @@
       try {
         const body = { model, messages, stream: !!streamCallback };
         body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
-        if (jsonResponseExpected && model.includes("gpt-4"))
+        if (jsonResponseExpected && (model.includes("gpt-4") || model.includes("gpt-3.5-turbo-1106"))) {
           body.response_format = { type: "json_object" };
+        }
         console.debug("Sending OpenAI", body, "query at", /* @__PURE__ */ new Date());
         response = await Promise.race([
           fetch("https://api.openai.com/v1/chat/completions", {
@@ -979,7 +980,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     if (messageHistory.length) {
       promptHistory = messageHistory;
     } else {
-      promptHistory = [{ message: "What's on your mind?", role: "assistant" }];
+      promptHistory = [{ content: "What's on your mind?", role: "assistant" }];
     }
     while (true) {
       const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.message}`).join("\n\n");
@@ -995,10 +996,10 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         ]
       }, { scrollToBottom: true });
       if (modelToUse) {
-        promptHistory.push({ role: "user", message: userMessage });
+        promptHistory.push({ role: "user", content: userMessage });
         const response = await responseFromPrompts(plugin2, app, modelToUse, "chat", promptHistory);
         if (response) {
-          promptHistory.push({ role: "assistant", message: `[${modelToUse}] ${response}` });
+          promptHistory.push({ role: "assistant", content: `[${modelToUse}] ${response}` });
           const alertResponse = await app.alert(response, { preface: conversation, actions: [{ icon: "navigate_next", label: "Ask a follow up question" }] });
           if (alertResponse === 0)
             continue;
@@ -1303,8 +1304,8 @@ ${trimmedResponse || aiResponse}`, {
             break;
           case "followup":
             const messages = [
-              { role: "user", message: promptParams.instruction },
-              { role: "assistant", message: trimmedResponse }
+              { role: "user", content: promptParams.instruction },
+              { role: "assistant", content: trimmedResponse }
             ];
             return await initiateChat(this, app, preferredModels, messages);
         }
