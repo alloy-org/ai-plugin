@@ -794,8 +794,11 @@ ${noteContent}`,
     allowResponse = null,
     contentIndexText
   } = {}) {
-    const note = await app.notes.find(noteUUID);
-    const noteContent = await note.content();
+    let noteContent = "";
+    if (noteUUID) {
+      const note = await app.notes.find(noteUUID);
+      noteContent = await note.content();
+    }
     preferredModels = preferredModels || await recommendedAiModels(plugin2, app, promptKey);
     if (!preferredModels.length)
       return;
@@ -1123,7 +1126,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
               type: "radio",
               label: `AI Model${this.lastModelUsed ? `. Defaults to last used` : ""}`,
               options,
-              value: this.lastModelUsed
+              value: this.lastModelUsed || aiModels?.at(0)
             }
           ]
         });
@@ -1134,7 +1137,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
           aiModels = [preferredModel].concat(aiModels.filter((model) => model !== preferredModel));
         return await this._noteOptionResultPrompt(
           app,
-          app.context.noteUUID,
+          null,
           "answer",
           { instruction },
           { preferredModels: aiModels }
@@ -1262,21 +1265,27 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       );
       if (aiResponse?.length) {
         const trimmedResponse = trimNoteContentFromAnswer(app, aiResponse);
-        const valueSelected = await app.prompt(`${APP_OPTION_VALUE_USE_PROMPT}
+        const options = [];
+        if (noteUUID) {
+          options.push(
+            { label: "Insert at start (prepend)", value: "prepend" },
+            { label: "Insert at end (append)", value: "append" },
+            { label: "Replace", value: "replace" }
+          );
+        }
+        options.push({ label: "Ask follow up question", value: "followup" });
+        let valueSelected;
+        if (options.length > 1) {
+          valueSelected = await app.prompt(`${APP_OPTION_VALUE_USE_PROMPT}
 
 ${trimmedResponse || aiResponse}`, {
-          inputs: [{
-            type: "radio",
-            label: "Choose an action",
-            options: [
-              { label: "Insert at start (prepend)", value: "prepend" },
-              { label: "Insert at end (append)", value: "append" },
-              { label: "Replace", value: "replace" },
-              { label: "Ask follow up question", value: "followup" }
-            ],
-            value: "append"
-          }]
-        });
+            inputs: [{ type: "radio", label: "Choose an action", options, value: options[0] }]
+          });
+        } else {
+          valueSelected = await app.alert(trimmedResponse || aiResponse, { actions: [{ label: "Ask follow up questions" }] });
+          if (valueSelected === 0)
+            valueSelected = "followup";
+        }
         console.debug("User picked", valueSelected, "for response", aiResponse);
         switch (valueSelected) {
           case "prepend":
