@@ -973,11 +973,15 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
 
   // lib/functions/chat.js
   async function initiateChat(plugin2, app, aiModels, messageHistory = []) {
-    let promptHistory = [{ message: "What's on your mind?", role: "assistant" }];
+    let promptHistory;
+    if (messageHistory.length) {
+      promptHistory = messageHistory;
+    } else {
+      promptHistory = [{ message: "What's on your mind?", role: "assistant" }];
+    }
     while (true) {
-      const loopMessages = [];
       const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.message}`).join("\n\n");
-      const [message, modelToUse] = await app.prompt(conversation, {
+      const [userMessage, modelToUse] = await app.prompt(conversation, {
         inputs: [
           { type: "text", label: "Message to send" },
           {
@@ -989,24 +993,18 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         ]
       }, { scrollToBottom: true });
       if (modelToUse) {
-        loopMessages.push({ role: "user", message });
-        const response = await responseFromPrompts(plugin2, app, modelToUse, "chat", messageHistory);
+        promptHistory.push({ role: "user", message: userMessage });
+        const response = await responseFromPrompts(plugin2, app, modelToUse, "chat", promptHistory);
         if (response) {
-          loopMessages.push({ role: "assistant", message: `[${modelToUse}] ${response}` });
+          promptHistory.push({ role: "assistant", message: `[${modelToUse}] ${response}` });
           const alertResponse = await app.alert(response, { preface: conversation, actions: [{ icon: "navigate_next", label: "Ask a follow up question" }] });
-          if (alertResponse === 0) {
-            promptHistory = promptHistory.concat(loopMessages);
-            messageHistory = messageHistory.concat(loopMessages);
-          } else {
-            break;
-          }
-        } else {
-          break;
+          if (alertResponse === 0)
+            continue;
         }
-      } else {
-        break;
       }
+      break;
     }
+    console.debug("Finished chat with history", promptHistory);
   }
 
   // lib/functions/groceries.js
