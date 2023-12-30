@@ -1006,7 +1006,8 @@ Will be utilized after your preliminary approval`,
           options: [
             { label: "OpenAI (best for most casual-to-intermediate users)", value: "openai" },
             { label: "Ollama (best for people who want high customization, or a free option)", value: "ollama" }
-          ]
+          ],
+          value: "openai"
         }
       ]
     });
@@ -1020,7 +1021,7 @@ Will be utilized after your preliminary approval`,
         app.alert("That doesn't seem to be a valid OpenAI API key. You can enter one later in the settings for this plugin, or you can install Ollama.");
         return null;
       }
-    } else {
+    } else if (optionSelected === "ollama") {
       app.alert(OLLAMA_INSTALL_TEXT);
       return null;
     }
