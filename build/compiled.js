@@ -432,7 +432,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   function streamAccumulate(modelsQueriedArray, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let jsonResponse, content = "";
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
-    for (const response in responses) {
+    for (const response of responses) {
       const parseableJson = response.replace(/"\n/, `"\\n`).replace(/"""/, `"\\""`);
       try {
         jsonResponse = JSON.parse(parseableJson.trim());
