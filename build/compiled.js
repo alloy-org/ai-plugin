@@ -1200,7 +1200,7 @@ Will be utilized after your preliminary approval`,
     }
   }
   async function sizeModelFromUser(plugin2, app, prompt) {
-    const [sizeModel, style] = await app.prompt(`Generating image for "${prompt}"`, {
+    const [sizeModel, style] = await app.prompt(`Generating image for "${prompt.trim()}"`, {
       inputs: [
         {
           label: "Model & Size",
@@ -1230,11 +1230,15 @@ Will be utilized after your preliminary approval`,
     return [size, model, style];
   }
   async function imageMarkdownFromPrompt(plugin2, app, prompt, apiKey, { note = null } = {}) {
-    app.alert("Generating images...");
+    if (!prompt) {
+      app.alert("Couldn't find a prompt to generate image from");
+      return null;
+    }
     const [size, model, style] = await sizeModelFromUser(plugin2, app, prompt);
     const jsonBody = { prompt, model, n: model === "dall-e-2" ? 3 : 1, size };
     if (style && model === "dall-e-3")
       jsonBody.style = style;
+    app.alert(`Generating ${jsonBody.n} image${jsonBody.n === 1 ? "" : "s"} for "${prompt.trim()}"...`);
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
