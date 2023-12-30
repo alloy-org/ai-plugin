@@ -96,6 +96,14 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   function shouldStream(plugin2) {
     return !plugin2.constants.isTestEnvironment;
   }
+  function streamPrefaceString(aiModel, modelsQueried, jsonResponseExpected) {
+    let responseText = "";
+    if (modelsQueried.length > 1)
+      responseText += `Response from ${modelsQueried[modelsQueried.length - 1]} was rejected as invalid.
+`;
+    responseText += `${aiModel} is now generating ${jsonResponseExpected ? "JSON " : ""}response...`;
+    return responseText;
+  }
   function jsonFromMessages(messages) {
     const json = {};
     const systemMessage = messages.find((message) => message.role === "system");
@@ -307,11 +315,11 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
 
   // lib/fetch-ollama.js
-  async function callOllama(plugin2, app, model, messages, promptKey, allowResponse) {
+  async function callOllama(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     const stream = shouldStream(plugin2);
     const jsonEndpoint = isJsonEndpoint(promptKey);
     let response;
-    const streamCallback = stream ? streamAccumulate : null;
+    const streamCallback = stream ? streamAccumulate.bind(null, modelsQueried) : null;
     if (jsonEndpoint) {
       response = await responsePromiseFromGenerate(
         app,
@@ -411,7 +419,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       { timeoutSeconds }
     );
   }
-  function streamAccumulate(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
+  function streamAccumulate(modelsQueriedArray, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let jsonResponse, content = "";
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
     for (const response in responses) {
@@ -434,7 +442,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       receivedContent += content;
       const userSelection = app.alert(receivedContent, {
         actions: [{ icon: "pending", label: "Generating response" }],
-        preface: `${aiModel} is generating ${jsonResponseExpected ? "JSON " : ""}response...`,
+        preface: streamPrefaceString(aiModel, modelsQueriedArray, jsonResponseExpected),
         scrollToEnd: true
       });
       if (userSelection === 0) {
@@ -470,9 +478,9 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
 
   // lib/fetch-openai.js
-  async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse) {
+  async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
-    const streamCallback = shouldStream(plugin2) ? streamAccumulate2 : null;
+    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried) : null;
     try {
       return await requestWithRetry(
         app,
@@ -548,7 +556,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       }
     }
   }
-  function streamAccumulate2(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
+  function streamAccumulate2(modelsQueriedArray, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let stop = false;
     const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
     for (const jsonString of responses) {
@@ -563,7 +571,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         receivedContent += content;
         app.alert(receivedContent, {
           actions: [{ icon: "pending", label: "Generating response" }],
-          preface: `${aiModel} is generating ${jsonResponseExpected ? "JSON " : ""}response...`,
+          preface: streamPrefaceString(aiModel, modelsQueriedArray, jsonResponseExpected),
           scrollToEnd: true
         });
       } else {
@@ -932,6 +940,7 @@ Will be utilized after your preliminary approval`,
   } = {}) {
     preferredModels = (preferredModels || await recommendedAiModels(plugin2, app, promptKey)).filter((n) => n);
     console.debug("Starting to query", promptKey, "with preferredModels", preferredModels);
+    let modelsQueried = [];
     for (const aiModel of preferredModels) {
       const inputLimit = isModelOllama(aiModel) ? OLLAMA_TOKEN_CHARACTER_LIMIT : openAiTokenLimit(aiModel);
       const suppressExample = tooDumbForExample(aiModel);
@@ -939,8 +948,9 @@ Will be utilized after your preliminary approval`,
       let response;
       plugin2.callCountByModel[aiModel] = (plugin2.callCountByModel[aiModel] || 0) + 1;
       plugin2.lastModelUsed = aiModel;
+      modelsQueried.push(aiModel);
       try {
-        response = await responseFromPrompts(plugin2, app, aiModel, promptKey, messages, { allowResponse });
+        response = await responseFromPrompts(plugin2, app, aiModel, promptKey, messages, { allowResponse, modelsQueried });
       } catch (e) {
         console.error("Caught exception trying to make call with", aiModel, e);
       }
@@ -953,11 +963,11 @@ Will be utilized after your preliminary approval`,
     }
     return { response: null, modelUsed: null };
   }
-  function responseFromPrompts(plugin2, app, aiModel, promptKey, messages, { allowResponse = null } = {}) {
+  function responseFromPrompts(plugin2, app, aiModel, promptKey, messages, { allowResponse = null, modelsQueried = null } = {}) {
     if (isModelOllama(aiModel)) {
-      return callOllama(plugin2, app, aiModel, messages, promptKey, allowResponse);
+      return callOllama(plugin2, app, aiModel, messages, promptKey, allowResponse, modelsQueried);
     } else {
-      return callOpenAI(plugin2, app, aiModel, messages, promptKey, allowResponse);
+      return callOpenAI(plugin2, app, aiModel, messages, promptKey, allowResponse, modelsQueried);
     }
   }
   function includingFallbackModels(plugin2, app, candidateAiModels) {
@@ -1502,6 +1512,9 @@ ${trimmedResponse || aiResponse}`, {
         if (selectedValue) {
           return selectedValue;
         }
+      } else {
+        const followUp = apiKeyFromApp(this, app)?.length ? "Consider adding an OpenAI API key to your plugin settings?" : "Try again?";
+        app.alert(`Unable to get a usable response from available AI models. ${followUp}`);
       }
       return null;
     },
