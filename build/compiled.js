@@ -1016,6 +1016,7 @@ Will be utilized after your preliminary approval`,
         }
       ]
     });
+    console.debug("User selected", optionSelected);
     if (optionSelected === "openai") {
       const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT)?.trim();
       if (openaiKey && openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
