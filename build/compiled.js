@@ -1116,14 +1116,19 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
   async function imageFromPreceding(plugin2, app, apiKey) {
     const note = await app.notes.find(app.context.noteUUID);
     const noteContent = await note.content();
-    const promptIndex = noteContent.indexOf(`{${plugin2.constants.pluginName}: from preceding}`);
+    const promptIndex = noteContent.indexOf(`{${plugin2.constants.pluginName}: Image from preceding}`);
     const precedingContent = noteContent.substring(0, promptIndex).trim();
     const prompt = precedingContent.split("\n").pop();
     console.debug("Deduced prompt", prompt);
     if (prompt?.trim()) {
-      const markdown = await imageMarkdownFromPrompt(plugin2, app, prompt.trim(), apiKey, { note });
-      if (markdown) {
-        app.context.replaceSelection(markdown);
+      try {
+        const markdown = await imageMarkdownFromPrompt(plugin2, app, prompt.trim(), apiKey, { note });
+        if (markdown) {
+          app.context.replaceSelection(markdown);
+        }
+      } catch (e) {
+        console.error("Error generating images from preceding text", e);
+        app.alert("There was an error generating images from preceding text:" + e);
       }
     } else {
       app.alert("Could not determine preceding text to use as a prompt");
@@ -1132,6 +1137,9 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
   async function imageMarkdownFromPrompt(plugin2, app, prompt, apiKey, { note = null } = {}) {
     console.log("C'mon OpenAI you can do it... request sent at", /* @__PURE__ */ new Date());
     app.alert("Generating images...");
+    let sizeParam = plugin2.constants.imageSize(app);
+    if (!sizeParam.includes("x"))
+      sizeParam = `${sizeParam}x${sizeParam}`;
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
@@ -1139,7 +1147,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         prompt,
         model: OPENAI_IMAGE_MODEL,
         n: plugin2.constants.generatedImageCount(app),
-        size: `${plugin2.constants.imageSize(app)}x${plugin2.constants.imageSize(app)}`
+        size: sizeParam
       })
     });
     const result = await response.json();
