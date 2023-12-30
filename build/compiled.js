@@ -338,7 +338,10 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     return response;
   }
   async function ollamaAvailableModels(plugin2, alertOnEmptyApp = null) {
-    return await fetchJson(`${OLLAMA_URL}/api/tags`).then((json) => {
+    try {
+      const json = await fetchJson(`${OLLAMA_URL}/api/tags`);
+      if (!json)
+        return null;
       if (json?.models?.length) {
         const availableModels = json.models.map((m) => m.name);
         const transformedModels = availableModels.map((m) => m.split(":")[0]);
@@ -355,9 +358,9 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       } else {
         return null;
       }
-    }).catch((error) => {
+    } catch (error) {
       console.log("Error trying to fetch Ollama versions: ", error, "Are you sure Ollama was started with 'OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve'");
-    });
+    }
   }
   async function responseFromChat(app, messages, model, promptKey, streamCallback, allowResponse, timeoutSeconds, { isTestEnvironment = false } = {}) {
     if (isTestEnvironment)
@@ -862,11 +865,19 @@ ${noteContent}`,
       const primaryAction = { icon: "post_add", label: "Accept" };
       let responseAsText = response, jsonResponse = false;
       if (typeof response === "object") {
-        jsonResponse = true;
-        responseAsText = JSON.stringify(response);
+        if (response.result?.length) {
+          responseAsText = "Results:\n* " + response.result.join("\n * ");
+        } else {
+          jsonResponse = true;
+          responseAsText = JSON.stringify(response);
+        }
       }
-      const selectedValue = await app.alert(responseAsText, { actions, preface: `${jsonResponse ? "JSON response s" : "S"}uggested by ${modelUsed}
-Will be parsed & applied after your preliminary approval`, primaryAction });
+      const selectedValue = await app.alert(responseAsText, {
+        actions,
+        preface: `${jsonResponse ? "JSON response s" : "S"}uggested by ${modelUsed}
+Will be utilized after your preliminary approval`,
+        primaryAction
+      });
       console.debug("User chose", selectedValue, "from", actions);
       if (selectedValue === -1) {
         return response;
@@ -1223,16 +1234,24 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     appOption: {
       // --------------------------------------------------------------------------
       [LOOK_UP_OLLAMA_MODEL_ACTION_LABEL]: async function(app) {
-        await fetchJson(`${OLLAMA_URL}/api/tags`).then((json) => {
-          if (json?.models?.length) {
-            this.ollamaModelsFound = json.models.map((m) => m.name);
-            app.alert(`Successfully connected to Ollama! Available models include: ${this.ollamaModelsFound.join(",")}`);
-          } else if (Array.isArray(json?.models)) {
-            app.alert("Successfully connected to Ollama, but could not find any running models. Try running 'ollama run llama2' in a terminal window?");
+        const noOllamaString = `Unable to connect to Ollama. Ensure you stop the process if it is currently running, then start it with "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"`;
+        try {
+          const ollamaModels = await ollamaAvailableModels(this);
+          if (ollamaModels?.length) {
+            this.ollamaModelsFound = ollamaModels;
+            app.alert(`Successfully connected to Ollama! Available models include: 
+${this.ollamaModelsFound.join("\n* ")}`);
+          } else {
+            const json = await fetchJson(`${OLLAMA_URL}/api/tags`);
+            if (Array.isArray(json?.models)) {
+              app.alert("Successfully connected to Ollama, but could not find any running models. Try running 'ollama run mistral' in a terminal window?");
+            } else {
+              app.alert(noOllamaString);
+            }
           }
-        }).catch((error) => {
-          app.alert("Unable to connect to Ollama. Ensure you stop the process if it is currently running, then start it with 'OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve'");
-        });
+        } catch (error) {
+          app.alert(noOllamaString);
+        }
       },
       // --------------------------------------------------------------------------
       "Show AI Usage by Model": async function(app) {
