@@ -1002,7 +1002,7 @@ Will be utilized after your preliminary approval`,
   function isModelOllama(model) {
     return !openAiModels().includes(model);
   }
-  async function aiModelFromUserIntervention(plugin2, app, { optionSelected = null }) {
+  async function aiModelFromUserIntervention(plugin2, app, { optionSelected = null } = {}) {
     optionSelected = optionSelected || await app.prompt(NO_MODEL_FOUND_TEXT, {
       inputs: [
         {
