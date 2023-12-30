@@ -67,6 +67,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   var AI_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
   var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
   var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
+  var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
   var PLUGIN_NAME = "AmpleAI";
   var OPENAI_KEY_LABEL = "OpenAI API Key";
 
@@ -463,6 +464,14 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
 
   // lib/openai-settings.js
+  async function apiKeyFromAppOrUser(plugin2, app) {
+    const apiKey = apiKeyFromApp(this, app) || await apiKeyFromUser(this, app);
+    if (!apiKey) {
+      app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
+      return null;
+    }
+    return apiKey;
+  }
   function apiKeyFromApp(plugin2, app) {
     if (app.settings[plugin2.constants.labelApiKey]) {
       return app.settings[plugin2.constants.labelApiKey].trim();
@@ -923,7 +932,7 @@ Will be utilized after your preliminary approval`,
     if (app.settings[plugin2.constants.labelAiModel]?.trim()) {
       candidateAiModels = app.settings[plugin2.constants.labelAiModel].trim().split(",").map((w) => w.trim()).filter((n) => n);
     }
-    if (plugin2.lastModelUsed) {
+    if (plugin2.lastModelUsed && (!isModelOllama(plugin2.lastModelUsed) || plugin2.ollamaModelsFound?.includes(plugin2.lastModelUsed))) {
       candidateAiModels.push(plugin2.lastModelUsed);
     }
     if (!plugin2.noFallbackModels) {
@@ -974,9 +983,10 @@ Will be utilized after your preliminary approval`,
     }
     if (modelsQueried.length && modelsQueried.find((m) => isModelOllama(m))) {
       const availableModels = await ollamaAvailableModels(plugin2, app);
-      console.debug("Found availableModels", availableModels, "after receiving no results in sendQuery");
       plugin2.ollamaModelsFound = availableModels;
+      console.debug("Found availableModels", availableModels, "after receiving no results in sendQuery. plugin.ollamaModelsFound is now", plugin2.ollamaModelsFound);
     }
+    plugin2.lastModelUsed = null;
     return { response: null, modelUsed: null };
   }
   function responseFromPrompts(plugin2, app, aiModel, promptKey, messages, { allowResponse = null, modelsQueried = null } = {}) {
@@ -1178,6 +1188,15 @@ Will be utilized after your preliminary approval`,
       app.alert("Could not determine preceding text to use as a prompt");
     }
   }
+  async function imageFromPrompt(plugin2, app, apiKey) {
+    const instruction = await app.prompt("Describe the image you would like to generate");
+    if (!instruction)
+      return;
+    const markdown = await imageMarkdownFromPrompt(plugin2, app, instruction, apiKey);
+    if (markdown) {
+      app.context.replaceSelection(markdown);
+    }
+  }
   async function sizeModelFromUser(plugin2, app, prompt) {
     const sizeModel = await app.prompt(`Generating image for "${prompt}"`, {
       inputs: [{
@@ -1344,13 +1363,17 @@ Will be utilized after your preliminary approval`,
       },
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PRECEDING_LABEL]: async function(app) {
-        const apiKey = apiKeyFromApp(this, app) || await apiKeyFromUser(this, app);
-        if (!apiKey) {
-          app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
-          return null;
+        const apiKey = apiKeyFromAppOrUser(this, app);
+        if (apiKey) {
+          await imageFromPreceding(this, app, apiKey);
         }
-        await imageFromPreceding(this, app, apiKey);
-        return null;
+      },
+      // --------------------------------------------------------------------------
+      [IMAGE_FROM_PROMPT_LABEL]: async function(app) {
+        const apiKey = apiKeyFromAppOrUser(this, app);
+        if (apiKey) {
+          await imageFromPrompt(this, app, apiKey);
+        }
       }
     },
     // --------------------------------------------------------------------------
@@ -1508,13 +1531,16 @@ ${trimmedResponse || aiResponse}`, {
       let contentIndex = noteContent.indexOf(text);
       if (contentIndex === -1)
         contentIndex = null;
+      const allowResponse = (jsonResponse) => {
+        return typeof jsonResponse === "object" && jsonResponse.result;
+      };
       const response = await notePromptResponse(
         this,
         app,
         noteUUID,
         promptKey,
         { text },
-        { contentIndex }
+        { allowResponse, contentIndex }
       );
       let options;
       if (response?.result) {
