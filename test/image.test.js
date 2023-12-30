@@ -1,7 +1,8 @@
 import { jest } from "@jest/globals"
-import { IMAGE_FROM_PRECEDING_LABEL } from "../lib/constants/settings"
+import { IMAGE_GENERATION_PROMPT } from "../lib/constants/prompt-strings"
+import { IMAGE_FROM_PRECEDING_LABEL, IMAGE_FROM_PROMPT_LABEL } from "../lib/constants/settings"
 import { DALL_E_DEFAULT, DALL_E_TEST_DEFAULT } from "../lib/constants/provider"
-import { mockPlugin, mockAppWithContent } from "./test-helpers.js"
+import { mockPlugin, mockApp, mockAppWithContent } from "./test-helpers.js"
 
 const AWAIT_TIME = 30000;
 
@@ -13,11 +14,11 @@ describe("with a mocked app", () => {
     const content = `Weekly goals:
         [ ] Action hero saving a pug and french bulldog puppy from an exploding building {${ plugin.constants.pluginName }: ${ IMAGE_FROM_PRECEDING_LABEL }
         [ ] Adopt a pound puppy`;
-    const { app, note } = mockAppWithContent(content);
+    const { app } = mockAppWithContent(content);
     app.prompt.mockImplementation((title, options) => {
       const chosenValue = options.inputs[0].value || options.inputs[0].options[0].value;
       console.debug("Chosen value", chosenValue, "from", title);
-      return chosenValue === DALL_E_DEFAULT ? DALL_E_TEST_DEFAULT : chosenValue;
+      return [ chosenValue === DALL_E_DEFAULT ? DALL_E_TEST_DEFAULT : chosenValue, null ];
     });
     const result = await plugin.insertText[IMAGE_FROM_PRECEDING_LABEL](app);
 
@@ -29,8 +30,20 @@ describe("with a mocked app", () => {
   }, AWAIT_TIME);
 
   it("should allow image lookup", async () => {
-    app.prompt.mockReturnValue("A red ball");
-    const result = await plugin.insertText["Image via prompt"](app);
+    const app = mockApp();
+    app.prompt.mockImplementation((title, options) => {
+      if (title === IMAGE_GENERATION_PROMPT) {
+        return "A red ball";
+      } else {
+        const defaultValue = options.inputs[0].value || options.inputs[0].options[0].value;
+        if (defaultValue === DALL_E_DEFAULT) {
+          return [ DALL_E_DEFAULT, "natural" ];
+        } else {
+          return defaultValue;
+        }
+      }
+    });
+    const result = await plugin.insertText[IMAGE_FROM_PROMPT_LABEL](app);
     expect(/!\[image]\(http/.test(result)).toBeTruthy()
   }, AWAIT_TIME);
 });
