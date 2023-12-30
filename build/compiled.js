@@ -1018,16 +1018,18 @@ Will be utilized after your preliminary approval`,
     });
     if (optionSelected === "openai") {
       const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT)?.trim();
-      if (openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
+      if (openaiKey && openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
         app.setSetting(plugin2.constants.labelApiKey, openaiKey);
         await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${DEFAULT_OPENAI_MODEL}", will be used for future AI lookups.`);
         return [DEFAULT_OPENAI_MODEL];
       } else {
-        const optionSelected2 = await app.alert(OPENAI_INVALID_KEY_TEXT, { actions: [
+        console.debug("User entered invalid OpenAI key");
+        const nextStep = await app.alert(OPENAI_INVALID_KEY_TEXT, { actions: [
           { icon: "settings", label: "Retry entering key" }
         ] });
-        if (optionSelected2 === 0) {
-          return await aiModelFromUserIntervention(plugin2, app, { optionSelected: optionSelected2 });
+        console.debug("nextStep selected", nextStep);
+        if (nextStep === 0) {
+          return await aiModelFromUserIntervention(plugin2, app, { optionSelected });
         }
         return null;
       }
