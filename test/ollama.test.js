@@ -1,8 +1,9 @@
 import { jest } from "@jest/globals"
-import { mockPlugin, mockAppWithContent, mockAlertAccept } from "./test-helpers"
+import { mockApp, mockPlugin, mockAppWithContent, mockAlertAccept } from "./test-helpers"
+import { LOOK_UP_OLLAMA_MODEL_ACTION_LABEL } from "../lib/constants/provider"
+import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { ollamaAvailableModels } from "../lib/fetch-ollama"
 import { groceryArrayFromContent } from "../lib/functions/groceries"
-import { AI_MODEL_LABEL } from "../lib/constants/settings"
 
 const AWAIT_TIME = 20000;
 
@@ -19,6 +20,7 @@ describe("Ollama", () => {
     expect(ollamaModels?.length || 0).toBeGreaterThan(0);
   });
 
+  // --------------------------------------------------------------------------------------
   it("should prefer better models", async () => {
     const ollamaModels = await ollamaAvailableModels(plugin);
     const mistralIndex = ollamaModels.indexOf("mistral");
@@ -26,6 +28,15 @@ describe("Ollama", () => {
     const codeLlamaIndex = ollamaModels.indexOf("codellama");
     expect(mistralIndex).toBeLessThan(llamaIndex);
     expect(llamaIndex).toBeLessThan(codeLlamaIndex);
+  });
+
+  // --------------------------------------------------------------------------------------
+  it("should discover and sort returned Ollama models", async () => {
+    const app = mockApp();
+    expect(plugin.ollamaModelsFound?.length || 0).toEqual(0);
+    await plugin.appOption[LOOK_UP_OLLAMA_MODEL_ACTION_LABEL](app);
+    expect(plugin.ollamaModelsFound.length).toBeGreaterThan(0);
+    expect(plugin.ollamaModelsFound[0]).toEqual("mistral");
   });
 
   describe("When it comes to rhyming stew", () => {
