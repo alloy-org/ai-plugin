@@ -434,7 +434,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
     for (const response in responses) {
       try {
-        const parseableJson = decodedValue.replace(/"\n/, `"\\n`).replace(/"""/, `"\\""`);
+        const parseableJson = response.replace(/"\n/, `"\\n`).replace(/"""/, `"\\""`);
         jsonResponse = JSON.parse(parseableJson.trim());
       } catch (e) {
         console.debug("Failed to parse JSON from", decodedValue);
@@ -1016,11 +1016,10 @@ Will be utilized after your preliminary approval`,
         }
       ]
     });
-    console.debug("User selected", optionSelected);
     if (optionSelected === "openai") {
-      const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT)?.trim();
+      const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT);
       if (openaiKey && openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
-        app.setSetting(plugin2.constants.labelApiKey, openaiKey);
+        app.setSetting(plugin2.constants.labelApiKey, openaiKey.trim());
         await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${DEFAULT_OPENAI_MODEL}", will be used for future AI lookups.`);
         return [DEFAULT_OPENAI_MODEL];
       } else {
