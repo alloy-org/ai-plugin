@@ -416,7 +416,8 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
     for (const response in responses) {
       try {
-        jsonResponse = JSON.parse(decodedValue.replace(/"\n/, `"\\n`).trim());
+        const parseableJson = decodedValue.replace(/"\n/, `"\\n`).replace(/"""/, `"\\""`);
+        jsonResponse = JSON.parse(parseableJson.trim());
       } catch (e) {
         console.debug("Failed to parse JSON from", decodedValue);
         console.debug("Attempting to parse yielded error", e, "Received content so far is", receivedContent, "this stream deduced", responses.length, "responses");
@@ -1240,7 +1241,8 @@ Will be utilized after your preliminary approval`,
           if (ollamaModels?.length) {
             this.ollamaModelsFound = ollamaModels;
             app.alert(`Successfully connected to Ollama! Available models include: 
-${this.ollamaModelsFound.join("\n* ")}`);
+
+* ${this.ollamaModelsFound.join("\n* ")}`);
           } else {
             const json = await fetchJson(`${OLLAMA_URL}/api/tags`);
             if (Array.isArray(json?.models)) {
