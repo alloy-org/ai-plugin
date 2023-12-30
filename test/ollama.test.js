@@ -40,7 +40,7 @@ describe("Ollama", () => {
   });
 
   describe("When it comes to rhyming stew", () => {
-    const expectedRhymes = [ "bees", "keys", "fleece", "fees", "leaves", "seas", "skis", "teas" ];
+    const expectedRhymes = [ "bees", "breeze", "keys", "ease", "fleece", "fees", "leaves", "please", "seas", "skis", "teas" ];
 
     // --------------------------------------------------------------------------------------
     it("exhibit Ollamas' propensity to bust deez hella dope rhymes", async () => {
