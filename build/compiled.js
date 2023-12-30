@@ -1,43 +1,20 @@
 (() => {
-  // lib/constants.js
-  var KILOBYTE = 1024;
-  var TOKEN_CHARACTERS = 4;
-  var AI_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
-  var DEFAULT_CHARACTER_LIMIT = 12e3;
-  var DEFAULT_OPENAI_MODEL = "gpt-4-1106-preview";
-  var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
-  var MAX_WORDS_TO_SHOW_RHYME = 4;
-  var MAX_WORDS_TO_SHOW_THESAURUS = 4;
-  var MAX_REALISTIC_THESAURUS_RHYME_WORDS = 4;
-  var MIN_OPENAI_KEY_CHARACTERS = 50;
-  var OLLAMA_URL = "http://localhost:11434";
-  var OLLAMA_TOKEN_CHARACTER_LIMIT = 2e4;
-  var OLLAMA_MODEL_PREFERENCES = [
-    "mistral",
-    "openhermes2.5-mistral",
-    "llama2"
-  ];
-  var OPENAI_KEY_LABEL = "OpenAI API Key";
-  var OPENAI_TOKEN_LIMITS = {
-    "gpt-3.5": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-16k": 16 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-1106": 16 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-instruct": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4": 8 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-1106-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-32k": 32 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-32k-0613": 32 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-vision-preview": 128 * KILOBYTE * TOKEN_CHARACTERS
-  };
-  var PLUGIN_NAME = "AmpleAI";
-  var REJECTED_RESPONSE_PREFIX = "The following responses were rejected:\n";
-  function openAiTokenLimit(model) {
-    return OPENAI_TOKEN_LIMITS[model];
-  }
-  function openAiModels() {
-    return Object.keys(OPENAI_TOKEN_LIMITS);
-  }
+  var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require : typeof Proxy !== "undefined" ? new Proxy(x, {
+    get: (a, b) => (typeof require !== "undefined" ? require : a)[b]
+  }) : x)(function(x) {
+    if (typeof require !== "undefined")
+      return require.apply(this, arguments);
+    throw new Error('Dynamic require of "' + x + '" is not supported');
+  });
+
+  // lib/plugin.js
+  var import_functionality3 = __require("constants/functionality");
+  var import_prompt_strings3 = __require("constants/prompt-strings.js");
+  var import_provider5 = __require("constants/provider");
+  var import_settings2 = __require("constants/settings");
+
+  // lib/fetch-json.js
+  var import_functionality = __require("constants/functionality.js");
 
   // lib/prompt-api-params.js
   function isJsonEndpoint(promptKey) {
@@ -77,7 +54,7 @@
       json.system = systemMessage.content;
       messages = messages.filter((message) => message !== systemMessage);
     }
-    const rejectedResponseMessage = messages.find((message) => message.role === "user" && message.content.startsWith(REJECTED_RESPONSE_PREFIX));
+    const rejectedResponseMessage = messages.find((message) => message.role === "user" && message.content.startsWith(import_functionality.REJECTED_RESPONSE_PREFIX));
     if (rejectedResponseMessage) {
       json.rejectedResponses = rejectedResponseMessage.content;
       messages = messages.filter((message) => message !== rejectedResponseMessage);
@@ -280,7 +257,12 @@
     return path;
   }
 
+  // lib/model-picker.js
+  var import_prompt_strings2 = __require("constants/prompt-strings");
+  var import_provider4 = __require("constants/provider");
+
   // lib/fetch-ollama.js
+  var import_provider = __require("constants/provider");
   async function callOllama(plugin2, app, model, messages, promptKey, allowResponse) {
     const stream = shouldStream(plugin2);
     const jsonEndpoint = isJsonEndpoint(promptKey);
@@ -312,14 +294,14 @@
     return response;
   }
   async function ollamaAvailableModels(plugin2, alertOnEmptyApp = null) {
-    return await fetchJson(`${OLLAMA_URL}/api/tags`).then((json) => {
+    return await fetchJson(`${import_provider.OLLAMA_URL}/api/tags`).then((json) => {
       if (json?.models?.length) {
         const availableModels = json.models.map((m) => m.name);
         const transformedModels = availableModels.map((m) => m.split(":")[0]);
         const uniqueModels = transformedModels.filter((value, index, array) => array.indexOf(value) === index);
         const sortedModels = uniqueModels.sort((a, b) => {
-          const aValue = OLLAMA_MODEL_PREFERENCES.indexOf(a) === -1 ? 10 : OLLAMA_MODEL_PREFERENCES.indexOf(a);
-          const bValue = OLLAMA_MODEL_PREFERENCES.indexOf(b) === -1 ? 10 : OLLAMA_MODEL_PREFERENCES.indexOf(b);
+          const aValue = import_provider.OLLAMA_MODEL_PREFERENCES.indexOf(a) === -1 ? 10 : import_provider.OLLAMA_MODEL_PREFERENCES.indexOf(a);
+          const bValue = import_provider.OLLAMA_MODEL_PREFERENCES.indexOf(b) === -1 ? 10 : import_provider.OLLAMA_MODEL_PREFERENCES.indexOf(b);
           return aValue - bValue;
         });
         console.debug("Ollama reports", availableModels, "available models, transformed to", sortedModels);
@@ -339,7 +321,7 @@
     let response;
     try {
       await Promise.race([
-        response = await fetch(`${OLLAMA_URL}/api/chat`, {
+        response = await fetch(`${import_provider.OLLAMA_URL}/api/chat`, {
           body: JSON.stringify({ model, messages, stream: !!streamCallback }),
           method: "POST"
         }),
@@ -361,7 +343,7 @@
     let response;
     try {
       await Promise.race([
-        response = await fetch(`${OLLAMA_URL}/api/generate`, {
+        response = await fetch(`${import_provider.OLLAMA_URL}/api/generate`, {
           body: JSON.stringify(jsonQuery),
           method: "POST"
         }),
@@ -414,8 +396,37 @@
   }
 
   // lib/fetch-openai.js
+  var import_provider2 = __require("constants/provider");
+
+  // lib/openai-settings.js
+  var import_prompt_strings = __require("constants/prompt-strings");
+  function apiKeyFromApp(plugin2, app) {
+    if (app.settings[plugin2.constants.labelApiKey]) {
+      return app.settings[plugin2.constants.labelApiKey].trim();
+    } else if (app.settings["API Key"]) {
+      const deprecatedKey = app.settings["API Key"].trim();
+      app.setSetting(plugin2.constants.labelApiKey, deprecatedKey);
+      return deprecatedKey;
+    } else {
+      if (plugin2.constants.isTestEnvironment) {
+        throw new Error(`Couldnt find an OpenAI key in ${plugin2.constants.labelApiKey}`);
+      } else {
+        app.alert("Please configure your OpenAI key in plugin settings.");
+      }
+      return null;
+    }
+  }
+  async function apiKeyFromUser(plugin2, app) {
+    const apiKey = await app.prompt(import_prompt_strings.OPENAI_API_KEY_TEXT);
+    if (apiKey) {
+      app.settings[plugin2.constants.labelApiKey] = apiKey;
+    }
+    return apiKey;
+  }
+
+  // lib/fetch-openai.js
   async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse) {
-    model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
+    model = model?.trim()?.length ? model : import_provider2.DEFAULT_OPENAI_MODEL;
     const streamCallback = shouldStream(plugin2) ? streamAccumulate2 : null;
     try {
       return await requestWithRetry(
@@ -433,22 +444,6 @@
         console.error("Failed to call OpenAI", error);
       } else {
         app.alert("Failed to call OpenAI: " + error);
-      }
-      return null;
-    }
-  }
-  function apiKeyFromApp(plugin2, app) {
-    if (app.settings[plugin2.constants.labelApiKey]) {
-      return app.settings[plugin2.constants.labelApiKey].trim();
-    } else if (app.settings["API Key"]) {
-      const deprecatedKey = app.settings["API Key"].trim();
-      app.setSetting(plugin2.constants.labelApiKey, deprecatedKey);
-      return deprecatedKey;
-    } else {
-      if (plugin2.constants.isTestEnvironment) {
-        throw new Error(`Couldnt find an OpenAI key in ${plugin2.constants.labelApiKey}`);
-      } else {
-        app.alert("Please configure your OpenAI key in plugin settings.");
       }
       return null;
     }
@@ -534,6 +529,11 @@
     return { abort: stop, receivedContent };
   }
 
+  // lib/prompts.js
+  var import_functionality2 = __require("constants/functionality");
+  var import_provider3 = __require("constants/provider");
+  var import_settings = __require("constants/settings");
+
   // lib/util.js
   function truncate(text, limit) {
     return text.length > limit ? text.slice(0, limit) : text;
@@ -601,7 +601,7 @@
   }
 
   // lib/prompts.js
-  function promptsFromPromptKey(promptKey, promptParams, contentIndex, rejectedResponses, aiModel, inputLimit = DEFAULT_CHARACTER_LIMIT) {
+  function promptsFromPromptKey(promptKey, promptParams, contentIndex, rejectedResponses, aiModel, inputLimit = import_provider3.DEFAULT_CHARACTER_LIMIT) {
     let messages = [];
     messages.push({ role: "system", content: systemPromptFromPromptKey(promptKey) });
     const userPrompt = userPromptFromPromptKey(promptKey, promptParams, contentIndex, aiModel, inputLimit);
@@ -614,7 +614,7 @@
     }
     const substantiveRejectedResponses = rejectedResponses?.filter((rejectedResponse) => rejectedResponse?.length > 0);
     if (substantiveRejectedResponses?.length) {
-      let message = REJECTED_RESPONSE_PREFIX;
+      let message = import_functionality2.REJECTED_RESPONSE_PREFIX;
       substantiveRejectedResponses.forEach((rejectedResponse) => {
         message += `* ${rejectedResponse}
 `;
@@ -654,7 +654,7 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
       if (promptKey === "replaceTextComplete") {
         tokenAndSurroundingContent = promptParams.text;
       } else {
-        const replaceToken = promptKey === "insertTextComplete" ? `${PLUGIN_NAME}: Complete` : `${PLUGIN_NAME}: Continue`;
+        const replaceToken = promptKey === "insertTextComplete" ? `${import_settings.PLUGIN_NAME}: Complete` : `${import_settings.PLUGIN_NAME}: Continue`;
         if (!boundedContent.includes(replaceToken) && noteContent.includes(replaceToken)) {
           contentIndex = noteContent.indexOf(replaceToken);
           console.debug("Couldn't find", replaceToken, "in", boundedContent, "so truncating to", relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit), "given", noteContentCharacterLimit);
@@ -751,7 +751,7 @@ ${noteContent}`,
   function relevantContentFromContent(content, contentIndex, contentLimit) {
     if (content && content.length > contentLimit) {
       if (!Number.isInteger(contentIndex)) {
-        const pluginNameIndex = content.indexOf(PLUGIN_NAME);
+        const pluginNameIndex = content.indexOf(import_settings.PLUGIN_NAME);
         contentIndex = pluginNameIndex === -1 ? contentLimit * 0.5 : pluginNameIndex;
       }
       const startIndex = Math.max(0, Math.round(contentIndex - contentLimit * 0.75));
@@ -783,13 +783,6 @@ ${noteContent}`,
     const systemPrompts = SYSTEM_PROMPTS;
     return systemPrompts[promptKey] || systemPrompts.defaultPrompt;
   }
-
-  // lib/prompt-strings.js
-  var APP_OPTION_VALUE_USE_PROMPT = "What would you like to do with this result?";
-  var NO_MODEL_FOUND_TEXT = `Could not find an available AI to call. Do you want to install and utilize Ollama, or would you prefer using OpenAI?<br><br>For casual-to-intermediate users, we recommend using OpenAI.`;
-  var OLLAMA_INSTALL_TEXT = `Rough installation instructions:<br>1. Download Ollama: https://ollama.ai/download<br>2. Install Ollama<br>3. Install one or more LLMs that will fit within the RAM your computer (examples at https://github.com/jmorganca/ollama)<br>4. Ensure that Ollama isn't already running, then start it in the console using "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"<br>You can test whether Ollama is running by invoking Quick Open and running the "${LOOK_UP_OLLAMA_MODEL_ACTION_LABEL}" action`;
-  var OPENAI_API_KEY_TEXT = `Paste your OpenAI API key in the field below.<br><br> Once you have an OpenAI account, get your key here: https://platform.openai.com/account/api-keys`;
-  var QUESTION_ANSWER_PROMPT = "What would you like to know?";
 
   // lib/model-picker.js
   var MAX_CANDIDATE_MODELS = 3;
@@ -892,7 +885,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     preferredModels = (preferredModels || await recommendedAiModels(plugin2, app, promptKey)).filter((n) => n);
     console.debug("Starting to query", promptKey, "with preferredModels", preferredModels);
     for (const aiModel of preferredModels) {
-      const inputLimit = isModelOllama(aiModel) ? OLLAMA_TOKEN_CHARACTER_LIMIT : openAiTokenLimit(aiModel);
+      const inputLimit = isModelOllama(aiModel) ? import_provider4.OLLAMA_TOKEN_CHARACTER_LIMIT : (0, import_provider4.openAiTokenLimit)(aiModel);
       const suppressExample = tooDumbForExample(aiModel);
       const messages = promptsFromPromptKey(promptKey, { ...promptParams, suppressExample }, contentIndex, rejectedResponses, aiModel, inputLimit);
       let response;
@@ -920,12 +913,12 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     }
   }
   function includingFallbackModels(plugin2, app, candidateAiModels) {
-    if (app.settings[OPENAI_KEY_LABEL]?.length && !candidateAiModels.find((m) => m === DEFAULT_OPENAI_MODEL)) {
-      candidateAiModels = candidateAiModels.concat(DEFAULT_OPENAI_MODEL);
-    } else if (!app.settings[OPENAI_KEY_LABEL]?.length) {
-      console.error("No OpenAI key found in", OPENAI_KEY_LABEL, "setting");
-    } else if (candidateAiModels.find((m) => m === DEFAULT_OPENAI_MODEL)) {
-      console.debug("Already an OpenAI model among candidates,", candidateAiModels.find((m) => m === DEFAULT_OPENAI_MODEL));
+    if (app.settings[import_provider4.OPENAI_KEY_LABEL]?.length && !candidateAiModels.find((m) => m === import_provider4.DEFAULT_OPENAI_MODEL)) {
+      candidateAiModels = candidateAiModels.concat(import_provider4.DEFAULT_OPENAI_MODEL);
+    } else if (!app.settings[import_provider4.OPENAI_KEY_LABEL]?.length) {
+      console.error("No OpenAI key found in", import_provider4.OPENAI_KEY_LABEL, "setting");
+    } else if (candidateAiModels.find((m) => m === import_provider4.DEFAULT_OPENAI_MODEL)) {
+      console.debug("Already an OpenAI model among candidates,", candidateAiModels.find((m) => m === import_provider4.DEFAULT_OPENAI_MODEL));
     }
     if (plugin2.ollamaModelsFound?.length) {
       candidateAiModels = candidateAiModels.concat(plugin2.ollamaModelsFound.filter((m) => !candidateAiModels.includes(m)));
@@ -934,10 +927,10 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     return candidateAiModels;
   }
   function isModelOllama(model) {
-    return !openAiModels().includes(model);
+    return !(0, import_provider4.openAiModels)().includes(model);
   }
   async function aiModelFromUserIntervention(plugin2, app) {
-    const optionSelected = await app.prompt(NO_MODEL_FOUND_TEXT, {
+    const optionSelected = await app.prompt(import_prompt_strings2.NO_MODEL_FOUND_TEXT, {
       inputs: [
         {
           type: "radio",
@@ -950,17 +943,17 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       ]
     });
     if (optionSelected === "openai") {
-      const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT);
-      if (openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
+      const openaiKey = await app.prompt(import_prompt_strings2.OPENAI_API_KEY_TEXT);
+      if (openaiKey.length >= import_provider4.MIN_OPENAI_KEY_CHARACTERS) {
         app.setSetting(plugin2.constants.labelApiKey, openaiKey);
-        await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${DEFAULT_OPENAI_MODEL}", will be used for future AI lookups.`);
-        return [DEFAULT_OPENAI_MODEL];
+        await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${import_provider4.DEFAULT_OPENAI_MODEL}", will be used for future AI lookups.`);
+        return [import_provider4.DEFAULT_OPENAI_MODEL];
       } else {
         app.alert("That doesn't seem to be a valid OpenAI API key. You can enter one later in the settings for this plugin, or you can install Ollama.");
         return null;
       }
     } else {
-      app.alert(OLLAMA_INSTALL_TEXT);
+      app.alert(import_prompt_strings2.OLLAMA_INSTALL_TEXT);
       return null;
     }
   }
@@ -1082,12 +1075,15 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
   }
 
   // lib/plugin.js
+  var import_image_generator = __require("functions/image-generator");
   var plugin = {
     // --------------------------------------------------------------------------------------
     constants: {
-      labelApiKey: OPENAI_KEY_LABEL,
-      labelAiModel: AI_MODEL_LABEL,
-      pluginName: PLUGIN_NAME,
+      generatedImageCount: (app) => app.settings[import_settings2.GENERATED_IMAGE_LABEL]?.trim() || import_functionality3.DEFAULT_GENERATED_IMAGE_COUNT,
+      imageSize: (app) => app.settings[import_settings2.GENERATED_IMAGE_SIZE_LABEL]?.trim() || `${import_functionality3.DEFAULT_IMAGE_PIXELS_PER_SIDE}x${import_functionality3.DEFAULT_IMAGE_PIXELS_PER_SIDE}`,
+      labelApiKey: import_provider5.OPENAI_KEY_LABEL,
+      labelAiModel: import_settings2.AI_MODEL_LABEL,
+      pluginName: import_settings2.PLUGIN_NAME,
       requestTimeoutSeconds: 30
     },
     // Plugin-global variables
@@ -1099,8 +1095,8 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     // --------------------------------------------------------------------------
     appOption: {
       // --------------------------------------------------------------------------
-      [LOOK_UP_OLLAMA_MODEL_ACTION_LABEL]: async function(app) {
-        await fetchJson(`${OLLAMA_URL}/api/tags`).then((json) => {
+      [import_provider5.LOOK_UP_OLLAMA_MODEL_ACTION_LABEL]: async function(app) {
+        await fetchJson(`${import_provider5.OLLAMA_URL}/api/tags`).then((json) => {
           if (json?.models?.length) {
             this.ollamaModelsFound = json.models.map((m) => m.name);
             app.alert(`Successfully connected to Ollama! Available models include: ${this.ollamaModelsFound.join(",")}`);
@@ -1124,7 +1120,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       "Answer": async function(app) {
         let aiModels = await recommendedAiModels(this, app, "answer");
         const options = aiModels.map((model) => ({ label: model, value: model }));
-        const [instruction, preferredModel] = await app.prompt(QUESTION_ANSWER_PROMPT, {
+        const [instruction, preferredModel] = await app.prompt(import_prompt_strings3.QUESTION_ANSWER_PROMPT, {
           inputs: [
             { type: "text", label: "Question", placeholder: "What's the meaning of life in 500 characters or less?" },
             {
@@ -1163,6 +1159,14 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       // --------------------------------------------------------------------------
       "Continue": async function(app) {
         return await this._completeText(app, "continue");
+      },
+      // --------------------------------------------------------------------------
+      "Image from preceding": async function(app) {
+        const apiKey = apiKeyFromApp(this, app) || await apiKeyFromUser(this, app);
+        if (!apiKey)
+          app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
+        await (0, import_image_generator.imageFromPreceding)(this, app, apiKey);
+        return null;
       }
     },
     // --------------------------------------------------------------------------
@@ -1239,7 +1243,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       // --------------------------------------------------------------------------
       "Rhymes": {
         check(app, text) {
-          return text.split(" ").length <= MAX_WORDS_TO_SHOW_RHYME;
+          return text.split(" ").length <= import_functionality3.MAX_WORDS_TO_SHOW_RHYME;
         },
         async run(app, text) {
           return await this._wordReplacer(app, text, "rhyming");
@@ -1248,7 +1252,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       // --------------------------------------------------------------------------
       "Thesaurus": {
         check(app, text) {
-          return text.split(" ").length <= MAX_WORDS_TO_SHOW_THESAURUS;
+          return text.split(" ").length <= import_functionality3.MAX_WORDS_TO_SHOW_THESAURUS;
         },
         async run(app, text) {
           return await this._wordReplacer(app, text, "thesaurus");
@@ -1281,7 +1285,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         options.push({ label: "Ask follow up question", value: "followup" });
         let valueSelected;
         if (options.length > 1) {
-          valueSelected = await app.prompt(`${APP_OPTION_VALUE_USE_PROMPT}
+          valueSelected = await app.prompt(`${import_prompt_strings3.APP_OPTION_VALUE_USE_PROMPT}
 
 ${trimmedResponse || aiResponse}`, {
             inputs: [{ type: "radio", label: "Choose an action", options, value: options[0] }]
@@ -1335,7 +1339,7 @@ ${trimmedResponse || aiResponse}`, {
       } else {
         return null;
       }
-      const optionList = options.map((word) => word.replace(/^[\d\-]+\.?[\s]?/g, ""))?.map((word) => word.trim())?.filter((n) => n.length && n.split(" ").length <= MAX_REALISTIC_THESAURUS_RHYME_WORDS);
+      const optionList = options.map((word) => word.replace(/^[\d\-]+\.?[\s]?/g, ""))?.map((word) => word.trim())?.filter((n) => n.length && n.split(" ").length <= import_functionality3.MAX_REALISTIC_THESAURUS_RHYME_WORDS);
       if (optionList?.length) {
         console.debug("Presenting option list", optionList);
         const selectedValue = await app.prompt(`Choose a replacement for "${text}"`, {
@@ -1353,7 +1357,7 @@ ${trimmedResponse || aiResponse}`, {
     },
     // --------------------------------------------------------------------------
     async _completeText(app, promptKey) {
-      const replaceToken = promptKey === "continue" ? `${PLUGIN_NAME}: Continue` : `${PLUGIN_NAME}: Complete`;
+      const replaceToken = promptKey === "continue" ? `${import_settings2.PLUGIN_NAME}: Continue` : `${import_settings2.PLUGIN_NAME}: Complete`;
       const answer = await notePromptResponse(
         this,
         app,
