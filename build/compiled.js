@@ -43,6 +43,7 @@
 
   // lib/constants/prompt-strings.js
   var APP_OPTION_VALUE_USE_PROMPT = "What would you like to do with this result?";
+  var IMAGE_GENERATION_PROMPT = "What would you like to generate an image of?";
   var NO_MODEL_FOUND_TEXT = `Could not find an available AI to call. Do you want to install and utilize Ollama, or would you prefer using OpenAI?
 
 For casual-to-intermediate users, we recommend using OpenAI, since it offers higher quality results and can generate images.`;
@@ -465,7 +466,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
 
   // lib/openai-settings.js
   async function apiKeyFromAppOrUser(plugin2, app) {
-    const apiKey = apiKeyFromApp(this, app) || await apiKeyFromUser(this, app);
+    const apiKey = apiKeyFromApp(plugin2, app) || await apiKeyFromUser(plugin2, app);
     if (!apiKey) {
       app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
       return null;
@@ -491,7 +492,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   async function apiKeyFromUser(plugin2, app) {
     const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
     if (apiKey) {
-      app.settings[plugin2.constants.labelApiKey] = apiKey;
+      app.setSetting(plugin2.constants.labelApiKey, apiKey);
     }
     return apiKey;
   }
@@ -1189,40 +1190,56 @@ Will be utilized after your preliminary approval`,
     }
   }
   async function imageFromPrompt(plugin2, app, apiKey) {
-    const instruction = await app.prompt("Describe the image you would like to generate");
+    const instruction = await app.prompt(IMAGE_GENERATION_PROMPT);
     if (!instruction)
       return;
-    const markdown = await imageMarkdownFromPrompt(plugin2, app, instruction, apiKey);
+    const note = await app.notes.find(app.context.noteUUID);
+    const markdown = await imageMarkdownFromPrompt(plugin2, app, instruction, apiKey, { note });
     if (markdown) {
       app.context.replaceSelection(markdown);
     }
   }
   async function sizeModelFromUser(plugin2, app, prompt) {
-    const sizeModel = await app.prompt(`Generating image for "${prompt}"`, {
-      inputs: [{
-        label: "Model & Size",
-        options: [
-          { label: "Dall-e-2 3x 512x512", value: "512x512~dall-e-2" },
-          { label: "Dall-e-2 3x 1024x1024", value: "1024x1024~dall-e-2" },
-          { label: "Dall-e-3 1x 1024x1024", value: "1024x1024~dall-e-3" },
-          { label: "Dall-e-3 1x 1792x1024", value: "1792x1024~dall-e-3" },
-          { label: "Dall-e-3 1x 1024x1792", value: "1024x1792~dall-e-3" }
-        ],
-        type: "radio",
-        value: plugin2.lastImageModel || DALL_E_DEFAULT
-      }]
+    const [sizeModel, style] = await app.prompt(`Generating image for "${prompt}"`, {
+      inputs: [
+        {
+          label: "Model & Size",
+          options: [
+            { label: "Dall-e-2 3x 512x512", value: "512x512~dall-e-2" },
+            { label: "Dall-e-2 3x 1024x1024", value: "1024x1024~dall-e-2" },
+            { label: "Dall-e-3 1x 1024x1024", value: "1024x1024~dall-e-3" },
+            { label: "Dall-e-3 1x 1792x1024", value: "1792x1024~dall-e-3" },
+            { label: "Dall-e-3 1x 1024x1792", value: "1024x1792~dall-e-3" }
+          ],
+          type: "radio",
+          value: plugin2.lastImageModel || DALL_E_DEFAULT
+        },
+        {
+          label: "Style - Used by Dall-e-3 models only (Optional)",
+          options: [
+            { label: "Vivid (default)", value: "vivid" },
+            { label: "Natural", value: "natural" }
+          ],
+          type: "select",
+          value: "vivid"
+        }
+      ]
     });
     plugin2.lastImageModel = sizeModel;
-    return sizeModel.split("~");
+    const [size, model] = sizeModel.split("~");
+    return [size, model, style];
   }
   async function imageMarkdownFromPrompt(plugin2, app, prompt, apiKey, { note = null } = {}) {
     app.alert("Generating images...");
-    const [size, model] = await sizeModelFromUser(plugin2, app, prompt);
+    const [size, model, style] = await sizeModelFromUser(plugin2, app, prompt);
+    const jsonBody = { prompt, model, n: model === "dall-e-2" ? 3 : 1, size };
+    if (style && model === "dall-e-3")
+      jsonBody.style = style;
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       // As of Dec 2023, v3 can only generate one image per run
-      body: JSON.stringify({ prompt, model, n: model === "dall-e-2" ? 3 : 1, size })
+      body: JSON.stringify(jsonBody)
     });
     const result = await response.json();
     const { data } = result;
@@ -1230,7 +1247,7 @@ Will be utilized after your preliminary approval`,
       const urls = data.map((d) => d.url);
       console.debug("Received options", urls, "at", /* @__PURE__ */ new Date());
       const radioOptions = urls.map((url) => ({ image: url, value: url }));
-      radioOptions.push({ label: "More options", value: "more" });
+      radioOptions.push({ label: "Regenerate image", value: "more" });
       const chosenImageURL = await app.prompt(`Received ${urls.length} options`, {
         inputs: [{
           label: "Choose an image",
@@ -1239,7 +1256,7 @@ Will be utilized after your preliminary approval`,
         }]
       });
       if (chosenImageURL === "more") {
-        return imageMarkdownFromPrompt(plugin2, app, prompt, { note });
+        return imageMarkdownFromPrompt(plugin2, app, prompt, apiKey, { note });
       } else if (chosenImageURL) {
         console.debug("Fetching and uploading chosen URL", chosenImageURL);
         const imageData = await fetchImageAsDataURL(chosenImageURL);
@@ -1363,14 +1380,14 @@ Will be utilized after your preliminary approval`,
       },
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PRECEDING_LABEL]: async function(app) {
-        const apiKey = apiKeyFromAppOrUser(this, app);
+        const apiKey = await apiKeyFromAppOrUser(this, app);
         if (apiKey) {
           await imageFromPreceding(this, app, apiKey);
         }
       },
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PROMPT_LABEL]: async function(app) {
-        const apiKey = apiKeyFromAppOrUser(this, app);
+        const apiKey = await apiKeyFromAppOrUser(this, app);
         if (apiKey) {
           await imageFromPrompt(this, app, apiKey);
         }
