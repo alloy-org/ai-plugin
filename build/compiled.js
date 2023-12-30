@@ -1,7 +1,5 @@
 (() => {
   // lib/constants/functionality.js
-  var DEFAULT_GENERATED_IMAGE_COUNT = 3;
-  var DEFAULT_IMAGE_PIXELS_PER_SIDE = 1024;
   var MAX_WORDS_TO_SHOW_RHYME = 4;
   var MAX_WORDS_TO_SHOW_THESAURUS = 4;
   var MAX_REALISTIC_THESAURUS_RHYME_WORDS = 4;
@@ -18,6 +16,7 @@
   function openAiModels() {
     return Object.keys(OPENAI_TOKEN_LIMITS);
   }
+  var DALL_E_DEFAULT = "1024x1024~dall-e-3";
   var DEFAULT_CHARACTER_LIMIT = 12e3;
   var DEFAULT_OPENAI_MODEL = "gpt-4-1106-preview";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
@@ -29,8 +28,6 @@
     "openhermes2.5-mistral",
     "llama2"
   ];
-  var OPENAI_KEY_LABEL = "OpenAI API Key";
-  var OPENAI_IMAGE_MODEL = "dall-e-3";
   var OPENAI_TOKEN_LIMITS = {
     "gpt-3.5": 4 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-3.5-turbo": 4 * KILOBYTE * TOKEN_CHARACTERS,
@@ -64,9 +61,9 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   // lib/constants/settings.js
   var AI_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
   var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
-  var GENERATED_IMAGE_LABEL = "Images generated per prompt";
-  var GENERATED_IMAGE_SIZE_LABEL = "Image size (e.g., 1024 or 1792x1024)";
+  var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
   var PLUGIN_NAME = "AmpleAI";
+  var OPENAI_KEY_LABEL = "OpenAI API Key";
 
   // lib/prompt-api-params.js
   function isJsonEndpoint(promptKey) {
@@ -1116,7 +1113,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
   async function imageFromPreceding(plugin2, app, apiKey) {
     const note = await app.notes.find(app.context.noteUUID);
     const noteContent = await note.content();
-    const promptIndex = noteContent.indexOf(`{${plugin2.constants.pluginName}: Image from preceding}`);
+    const promptIndex = noteContent.indexOf(`{${plugin2.constants.pluginName}: ${IMAGE_FROM_PRECEDING_LABEL}`);
     const precedingContent = noteContent.substring(0, promptIndex).trim();
     const prompt = precedingContent.split("\n").pop();
     console.debug("Deduced prompt", prompt);
@@ -1134,27 +1131,42 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       app.alert("Could not determine preceding text to use as a prompt");
     }
   }
+  async function sizeModelFromUser(plugin2, app) {
+    const sizeModel = await app.prompt("What to generate?", {
+      inputs: [{
+        label: "Model & Size",
+        options: [
+          { label: "Dall-e-2 3x 512x512", value: "512x512~dall-e-2" },
+          { label: "Dall-e-2 3x 1024x1024", value: "1024x1024~dall-e-2" },
+          { label: "Dall-e-3 1x 1024x1024", value: "1024x1024~dall-e-3" },
+          { label: "Dall-e-3 1x 1792x1024", value: "1792x1024~dall-e-3" },
+          { label: "Dall-e-3 1x 1024x1792", value: "1024x1792~dall-e-3" }
+        ],
+        value: plugin2.lastImageModel || DALL_E_DEFAULT
+      }]
+    });
+    plugin2.lastImageModel = sizeModel;
+    return sizeModel.split("~");
+  }
   async function imageMarkdownFromPrompt(plugin2, app, prompt, apiKey, { note = null } = {}) {
-    console.log("C'mon OpenAI you can do it... request sent at", /* @__PURE__ */ new Date());
     app.alert("Generating images...");
-    let sizeParam = plugin2.constants.imageSize(app);
-    if (!sizeParam.includes("x"))
-      sizeParam = `${sizeParam}x${sizeParam}`;
+    const [size, model] = await sizeModelFromUser(plugin2, app);
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
       body: JSON.stringify({
         prompt,
-        model: OPENAI_IMAGE_MODEL,
-        n: plugin2.constants.generatedImageCount(app),
-        size: sizeParam
+        model,
+        n: model === "dall-e-2" ? 3 : 1,
+        // As of Dec 2023, v3 can only generate one image per run
+        size
       })
     });
     const result = await response.json();
     const { data } = result;
     if (data?.length) {
       const urls = data.map((d) => d.url);
-      console.log("Received options", urls, "at", /* @__PURE__ */ new Date());
+      console.debug("Received options", urls, "at", /* @__PURE__ */ new Date());
       const radioOptions = urls.map((url) => ({ image: url, value: url }));
       radioOptions.push({ label: "More options", value: "more" });
       const chosenImageURL = await app.prompt(`Received ${urls.length} options`, {
@@ -1167,7 +1179,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       if (chosenImageURL === "more") {
         return imageMarkdownFromPrompt(plugin2, app, prompt, { note });
       } else if (chosenImageURL) {
-        console.log("Fetching and uploading chosen URL", chosenImageURL);
+        console.debug("Fetching and uploading chosen URL", chosenImageURL);
         const imageData = await fetchImageAsDataURL(chosenImageURL);
         if (!note)
           note = await app.notes.find(app.context.noteUUID);
@@ -1199,8 +1211,6 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
   var plugin = {
     // --------------------------------------------------------------------------------------
     constants: {
-      generatedImageCount: (app) => app.settings[GENERATED_IMAGE_LABEL]?.trim() || DEFAULT_GENERATED_IMAGE_COUNT,
-      imageSize: (app) => app.settings[GENERATED_IMAGE_SIZE_LABEL]?.trim() || `${DEFAULT_IMAGE_PIXELS_PER_SIDE}x${DEFAULT_IMAGE_PIXELS_PER_SIDE}`,
       labelApiKey: OPENAI_KEY_LABEL,
       labelAiModel: AI_MODEL_LABEL,
       pluginName: PLUGIN_NAME,
@@ -1281,7 +1291,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
         return await this._completeText(app, "continue");
       },
       // --------------------------------------------------------------------------
-      "Image from preceding": async function(app) {
+      [IMAGE_FROM_PRECEDING_LABEL]: async function(app) {
         const apiKey = apiKeyFromApp(this, app) || await apiKeyFromUser(this, app);
         if (!apiKey)
           app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
