@@ -433,8 +433,8 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     let jsonResponse, content = "";
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
     for (const response in responses) {
+      const parseableJson = response.replace(/"\n/, `"\\n`).replace(/"""/, `"\\""`);
       try {
-        const parseableJson = response.replace(/"\n/, `"\\n`).replace(/"""/, `"\\""`);
         jsonResponse = JSON.parse(parseableJson.trim());
       } catch (e) {
         console.debug("Failed to parse JSON from", decodedValue);
@@ -445,7 +445,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       if (responseContent) {
         content += responseContent;
       } else {
-        console.debug("No response content found in decodedValue response", decodedValue);
+        console.debug("No response content found. Response", response, "\nParses to", parseableJson, "\nWhich yields JSON received", jsonResponse);
       }
     }
     if (content) {
@@ -872,6 +872,7 @@ ${noteContent}`,
       { allowResponse, contentIndex, preferredModels, rejectedResponses }
     );
     if (response === null) {
+      app.alert("Failed to receive a usable response from AI");
       console.error("No result was returned from sendQuery with models", preferredModels);
       return;
     }
