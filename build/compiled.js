@@ -361,9 +361,14 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         });
         console.debug("Ollama reports", availableModels, "available models, transformed to", sortedModels);
         return sortedModels;
-      } else if (Array.isArray(json?.models) && alertOnEmptyApp) {
-        alertOnEmptyApp.alert("Ollama is running but no LLMs are reported as available. Have you Run 'ollama run llama2' yet?");
       } else {
+        if (alertOnEmptyApp) {
+          if (Array.isArray(json?.models)) {
+            alertOnEmptyApp.alert("Ollama is running but no LLMs are reported as available. Have you Run 'ollama run mistral' yet?");
+          } else {
+            alertOnEmptyApp.alert(`Unable to fetch Ollama models. Was Ollama started with "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"?`);
+          }
+        }
         return null;
       }
     } catch (error) {
@@ -958,8 +963,13 @@ Will be utilized after your preliminary approval`,
         return { response, modelUsed: aiModel };
       } else {
         plugin2.errorCountByModel[aiModel] = (plugin2.errorCountByModel[aiModel] || 0) + 1;
-        console.error("Failed to make call with", aiModel, "response", response, "while messages are", messages);
+        console.error("Failed to make call with", aiModel, "response", response, "while messages are", messages, "Error counts", plugin2.errorCountByModel);
       }
+    }
+    if (modelsQueried.length && modelsQueried.find((m) => isModelOllama(m))) {
+      const availableModels = await ollamaAvailableModels(plugin2, app);
+      console.debug("Found availableModels", availableModels, "after receiving no results in sendQuery");
+      plugin2.ollamaModelsFound = availableModels;
     }
     return { response: null, modelUsed: null };
   }
