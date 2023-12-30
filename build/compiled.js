@@ -1131,8 +1131,8 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       app.alert("Could not determine preceding text to use as a prompt");
     }
   }
-  async function sizeModelFromUser(plugin2, app) {
-    const sizeModel = await app.prompt("What to generate?", {
+  async function sizeModelFromUser(plugin2, app, prompt) {
+    const sizeModel = await app.prompt(`Generating image for "${prompt}"`, {
       inputs: [{
         label: "Model & Size",
         options: [
@@ -1151,7 +1151,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
   }
   async function imageMarkdownFromPrompt(plugin2, app, prompt, apiKey, { note = null } = {}) {
     app.alert("Generating images...");
-    const [size, model] = await sizeModelFromUser(plugin2, app);
+    const [size, model] = await sizeModelFromUser(plugin2, app, prompt);
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
