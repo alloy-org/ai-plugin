@@ -410,12 +410,13 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
   function streamAccumulate(app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let jsonResponse, content = "";
-    const responses = decodedValue.replace(/}\n\{/g, "} \n{").split(" \n");
+    const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
     for (const response in responses) {
       try {
         jsonResponse = JSON.parse(decodedValue.trim());
       } catch (e) {
-        console.debug("Failed to parse JSON from", decodedValue, "with error", e, "Received content so far is", receivedContent);
+        console.debug("Failed to parse JSON from", decodedValue);
+        console.debug("Attempting to parse yielded error", e, "Received content so far is", receivedContent, "this stream deduced", responses.length, "responses");
         return { receivedContent };
       }
       const responseContent = jsonResponse?.message?.content || jsonResponse?.response;
@@ -1289,8 +1290,10 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PRECEDING_LABEL]: async function(app) {
         const apiKey = apiKeyFromApp(this, app) || await apiKeyFromUser(this, app);
-        if (!apiKey)
+        if (!apiKey) {
           app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
+          return null;
+        }
         await imageFromPreceding(this, app, apiKey);
         return null;
       }
