@@ -413,7 +413,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
     for (const response in responses) {
       try {
-        jsonResponse = JSON.parse(decodedValue.trim());
+        jsonResponse = JSON.parse(decodedValue.replace(/"\n/, `"\\n`).trim());
       } catch (e) {
         console.debug("Failed to parse JSON from", decodedValue);
         console.debug("Attempting to parse yielded error", e, "Received content so far is", receivedContent, "this stream deduced", responses.length, "responses");
