@@ -1142,6 +1142,7 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
           { label: "Dall-e-3 1x 1792x1024", value: "1792x1024~dall-e-3" },
           { label: "Dall-e-3 1x 1024x1792", value: "1024x1792~dall-e-3" }
         ],
+        type: "radio",
         value: plugin2.lastImageModel || DALL_E_DEFAULT
       }]
     });
@@ -1154,13 +1155,8 @@ Will be parsed & applied after your preliminary approval`, primaryAction });
     const response = await fetch("https://api.openai.com/v1/images/generations", {
       method: "POST",
       headers: { "Authorization": `Bearer ${apiKey}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        prompt,
-        model,
-        n: model === "dall-e-2" ? 3 : 1,
-        // As of Dec 2023, v3 can only generate one image per run
-        size
-      })
+      // As of Dec 2023, v3 can only generate one image per run
+      body: JSON.stringify({ prompt, model, n: model === "dall-e-2" ? 3 : 1, size })
     });
     const result = await response.json();
     const { data } = result;
