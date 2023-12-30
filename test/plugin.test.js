@@ -1,8 +1,8 @@
-import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TEST_MODEL, openAiTokenLimit } from "../lib/constants/provider.js"
-import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings.js"
-import { AI_MODEL_LABEL } from "../lib/constants/settings.js"
+import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TEST_MODEL, openAiTokenLimit } from "../lib/constants/provider"
+import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
+import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
-import { mockAlertAccept, mockAppWithContent, mockPlugin } from "../lib/test-helpers.js"
+import { mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
 

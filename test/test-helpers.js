@@ -1,8 +1,8 @@
-import { OPENAI_KEY_LABEL } from "./constants/settings"
+import { OPENAI_KEY_LABEL } from "../lib/constants/settings"
 import dotenv from "dotenv"
 import fetch from "isomorphic-fetch"
 import { jest } from "@jest/globals"
-import pluginObject from "./plugin"
+import pluginObject from "../lib/plugin"
 
 dotenv.config();
 

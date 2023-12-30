@@ -1,8 +1,8 @@
 import { jest } from "@jest/globals"
-import { mockPlugin, mockAppWithContent, mockAlertAccept } from "../lib/test-helpers.js"
-import { ollamaAvailableModels } from "../lib/fetch-ollama.js"
-import { groceryArrayFromContent } from "../lib/functions/groceries.js"
-import { AI_MODEL_LABEL } from "../lib/constants/settings.js"
+import { mockPlugin, mockAppWithContent, mockAlertAccept } from "./test-helpers"
+import { ollamaAvailableModels } from "../lib/fetch-ollama"
+import { groceryArrayFromContent } from "../lib/functions/groceries"
+import { AI_MODEL_LABEL } from "../lib/constants/settings"
 
 const AWAIT_TIME = 20000;
 
