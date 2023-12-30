@@ -45,7 +45,7 @@
   var APP_OPTION_VALUE_USE_PROMPT = "What would you like to do with this result?";
   var NO_MODEL_FOUND_TEXT = `Could not find an available AI to call. Do you want to install and utilize Ollama, or would you prefer using OpenAI?
 
-For casual-to-intermediate users, we recommend using OpenAI.`;
+For casual-to-intermediate users, we recommend using OpenAI, since it offers higher quality results and can generate images.`;
   var OLLAMA_INSTALL_TEXT = `Rough installation instructions:
 1. Download Ollama: https://ollama.ai/download
 2. Install Ollama
@@ -56,6 +56,11 @@ You can test whether Ollama is running by invoking Quick Open and running the "$
   var OPENAI_API_KEY_TEXT = `Paste your OpenAI API key in the field below.
 
 Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
+  var OPENAI_INVALID_KEY_TEXT = `That doesn't seem to be a valid OpenAI API key. Possible next steps:
+
+1. Enter one later in the settings for this plugin
+2. Install Ollama
+3. Re-run this command and enter a valid OpenAI API key (must be at least ${MIN_OPENAI_KEY_CHARACTERS} characters)`;
   var QUESTION_ANSWER_PROMPT = "What would you like to know?";
 
   // lib/constants/settings.js
@@ -997,32 +1002,37 @@ Will be utilized after your preliminary approval`,
   function isModelOllama(model) {
     return !openAiModels().includes(model);
   }
-  async function aiModelFromUserIntervention(plugin2, app) {
-    const optionSelected = await app.prompt(NO_MODEL_FOUND_TEXT, {
+  async function aiModelFromUserIntervention(plugin2, app, { optionSelected = null }) {
+    optionSelected = optionSelected || await app.prompt(NO_MODEL_FOUND_TEXT, {
       inputs: [
         {
           type: "radio",
           label: "Which model would you prefer to use?",
           options: [
-            { label: "OpenAI (best for most casual-to-intermediate users)", value: "openai" },
-            { label: "Ollama (best for people who want high customization, or a free option)", value: "ollama" }
+            { label: "OpenAI: best for most users. Offers image generation", value: "openai" },
+            { label: "Ollama: best for experts who want high customization, or a free option)", value: "ollama" }
           ],
           value: "openai"
         }
       ]
     });
     if (optionSelected === "openai") {
-      const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT);
+      const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT)?.trim();
       if (openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
         app.setSetting(plugin2.constants.labelApiKey, openaiKey);
         await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${DEFAULT_OPENAI_MODEL}", will be used for future AI lookups.`);
         return [DEFAULT_OPENAI_MODEL];
       } else {
-        app.alert("That doesn't seem to be a valid OpenAI API key. You can enter one later in the settings for this plugin, or you can install Ollama.");
+        const optionSelected2 = await app.alert(OPENAI_INVALID_KEY_TEXT, { actions: [
+          { icon: "settings", label: "Retry entering key" }
+        ] });
+        if (optionSelected2 === 0) {
+          return await aiModelFromUserIntervention(plugin2, app, { optionSelected: optionSelected2 });
+        }
         return null;
       }
     } else if (optionSelected === "ollama") {
-      app.alert(OLLAMA_INSTALL_TEXT);
+      await app.alert(OLLAMA_INSTALL_TEXT);
       return null;
     }
   }
