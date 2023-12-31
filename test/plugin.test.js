@@ -1,6 +1,6 @@
 import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TEST_MODEL, openAiTokenLimit } from "../lib/constants/provider"
 import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
-import { AI_MODEL_LABEL } from "../lib/constants/settings"
+import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
 import { mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
@@ -181,4 +181,22 @@ describe("This here plugin", () => {
     const expectedWords = [ "beep", "keep", "deep", "sleep", "creep", "weep" ];
     expect(expectedWords.find(w => answers.includes(w))).toBeTruthy();
   }, AWAIT_TIME);
+
+  // --------------------------------------------------------------------------------------
+  it("should suggest tasks", async () => {
+    const content = `# Clean up the house\n- [ ] Vacuum the upstairs\n- [ ] Wash the dishes\n{${ plugin.constants.pluginName }: ${ SUGGEST_TASKS_LABEL }}`;
+    const { app, note } = mockAppWithContent(content);
+    plugin.noFallbackModels = true;
+    mockAlertAccept(app)
+    for (const aiModel of [ "mistral", DEFAULT_OPENAI_TEST_MODEL, "llama2" ]) {
+      let suggestedTasks = [];
+      app.setSetting(AI_MODEL_LABEL, aiModel);
+      app.prompt.mockImplementation((title, inputs) => {
+        suggestedTasks = suggestedTasks.concat(inputs[0].map(t => t.value));
+        return inputs[0].value;
+      });
+      await plugin.insertText[SUGGEST_TASKS_LABEL](app);
+      expect(suggestedTasks.length).toBeGreaterThan(0);
+    }
+  });
 });
