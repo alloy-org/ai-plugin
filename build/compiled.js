@@ -802,8 +802,8 @@ Return the EXACT SAME ${groceryArray.length} groceries from the "groceries" key,
           }
         })
       ],
-      suggestTasks: ({ noteContent, noteName, text }) => [
-        JSON.stringify({
+      suggestTasks: ({ chosenTasks, noteContent, noteName, text }) => {
+        const queryJson = {
           instruction: `Respond with a JSON object that contains an array of 10 tasks that will be inserted at the <inserTasks> token in the provided markdown content`,
           taskContext: `Title: ${noteName}
 
@@ -815,21 +815,28 @@ ${noteContent.replace(text, `<insertTasks>`)}`,
 Content: 
 - [ ] Mop the floors
 <insertTasks>` },
-            response: { result: [
-              "Dust the living room furniture",
-              "Fold and put away the laundry",
-              "Water indoor plants",
-              "Hang up any recent mail",
-              "Fold and put away laundry",
-              "Take out the trash & recycling",
-              "Wipe down bathroom mirrors & counter",
-              "Sweep the entry and porch",
-              "Organize the pantry",
-              "Vacuum"
-            ] }
+            response: {
+              result: [
+                "Dust the living room furniture",
+                "Fold and put away the laundry",
+                "Water indoor plants",
+                "Hang up any recent mail",
+                "Fold and put away laundry",
+                "Take out the trash & recycling",
+                "Wipe down bathroom mirrors & counter",
+                "Sweep the entry and porch",
+                "Organize the pantry",
+                "Vacuum"
+              ]
+            }
           }
-        })
-      ],
+        };
+        if (chosenTasks) {
+          queryJson.alreadyAcceptedTasks = `The following tasks have been proposed and accepted already. DO NOT REPEAT THESE, but do suggest complementary tasks:
+* ${chosenTasks.join("\n * ")}`;
+        }
+        return JSON.stringify(queryJson);
+      },
       summarize: ({ noteContent }) => `Summarize the following markdown-formatted note:
 
 ${noteContent}`,
@@ -1398,7 +1405,10 @@ Will be utilized after your preliminary approval`,
         if (!promptOptions.length)
           break;
         promptOptions.push({ label: "Done picking tasks", value: "done" });
-        const insertTask = await app.prompt(`Which tasks would you like to add to your note?`, {
+        promptOptions.push({ label: "Add more tasks", value: "more" });
+        const promptString = `Which tasks would you like to add to your note?` + (chosenTasks.length ? `
+Added ${chosenTasks.length} task${chosenTasks.length === 1 ? "" : "s"} so far` : "");
+        const insertTask = await app.prompt(promptString, {
           inputs: [
             {
               label: "Choose tasks",
@@ -1409,10 +1419,14 @@ Will be utilized after your preliminary approval`,
           ]
         });
         if (insertTask) {
-          chosenTasks.push(insertTask);
-          unchosenTasks = unchosenTasks.filter((task) => !chosenTasks.includes(task));
-          if (insertTask === "done")
+          if (insertTask === "done") {
             break;
+          } else if (insertTask === "more") {
+            await addMoreTasks(plugin2, app, allowResponse, contentIndexText, chosenTasks, unchosenTasks);
+          } else {
+            chosenTasks.push(insertTask);
+            unchosenTasks = unchosenTasks.filter((task) => !chosenTasks.includes(task));
+          }
         } else {
           break;
         }
@@ -1429,6 +1443,21 @@ Will be utilized after your preliminary approval`,
 ${taskArray.join("\n")}`);
     }
     return null;
+  }
+  async function addMoreTasks(plugin2, app, allowResponse, contentIndexText, chosenTasks, unchosenTasks) {
+    const rejectedResponses = unchosenTasks;
+    const moreTaskResponse = await notePromptResponse(
+      plugin2,
+      app,
+      app.context.noteUUID,
+      "suggestTasks",
+      { chosenTasks },
+      { allowResponse, contentIndexText, rejectedResponses }
+    );
+    const newTasks = moreTaskResponse && taskArrayFromResponse(moreTaskResponse);
+    if (newTasks) {
+      newTasks.forEach((t) => !unchosenTasks.includes(t) && !chosenTasks.includes(t) ? unchosenTasks.push(t) : null);
+    }
   }
   function taskArrayFromResponse(response) {
     if (typeof response === "string") {
