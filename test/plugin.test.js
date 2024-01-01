@@ -201,5 +201,5 @@ describe("This here plugin", () => {
       expect(suggestedTasks.length).toBeGreaterThan(0);
       console.log(aiModel, "successfully generated", suggestedTasks.length ,"tasks");
     }
-  });
+  }, AWAIT_TIME * 5);
 });
