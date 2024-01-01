@@ -1404,8 +1404,8 @@ Will be utilized after your preliminary approval`,
         const promptOptions = unchosenTasks.map((t) => ({ label: t, value: t }));
         if (!promptOptions.length)
           break;
-        promptOptions.push({ label: "Done picking tasks", value: "done" });
         promptOptions.push({ label: "Add more tasks", value: "more" });
+        promptOptions.push({ label: "Done picking tasks", value: "done" });
         const promptString = `Which tasks would you like to add to your note?` + (chosenTasks.length ? `
 ${chosenTasks.length} task${chosenTasks.length === 1 ? "" : "s"} will be inserted when you choose the "Done picking tasks" option` : "");
         const insertTask = await app.prompt(promptString, {
