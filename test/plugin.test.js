@@ -202,4 +202,31 @@ describe("This here plugin", () => {
       console.log(aiModel, "successfully generated", suggestedTasks.length ,"tasks");
     }
   }, AWAIT_TIME * 5);
+
+  // --------------------------------------------------------------------------------------
+  it("should suggest more tasks", async () => {
+    const content = `# Marketing for note taking app\n- [ ] Write SEO content for "productivity"\n- [ ] Investigate top keywords with Google\n{${ plugin.constants.pluginName }: ${ SUGGEST_TASKS_LABEL }}`;
+    const { app } = mockAppWithContent(content);
+    plugin.noFallbackModels = true;
+    mockAlertAccept(app)
+    let suggestedTasks = [];
+    let promptCount = 0;
+    app.setSetting(AI_MODEL_LABEL, DEFAULT_OPENAI_TEST_MODEL);
+    app.prompt.mockImplementation((title, object) => {
+      promptCount += 1;
+      const promptOptionValues = object.inputs[0].options.map(t => t.value);
+      suggestedTasks = promptOptionValues;
+      if (promptCount === 1) {
+        return promptOptionValues[0];
+      } else if (promptCount === 2) {
+        return "more";
+      } else {
+        return "done";
+      }
+    });
+    await plugin.insertText[SUGGEST_TASKS_LABEL](app);
+    expect(suggestedTasks.length).toBeGreaterThan(11);
+    console.log("Successfully generated", suggestedTasks.length ,"tasks");
+
+  }, AWAIT_TIME * 2);
 });
