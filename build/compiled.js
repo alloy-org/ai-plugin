@@ -69,12 +69,13 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
   var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
   var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
+  var SUGGEST_TASKS_LABEL = "Suggest tasks";
   var PLUGIN_NAME = "AmpleAI";
   var OPENAI_KEY_LABEL = "OpenAI API Key";
 
   // lib/prompt-api-params.js
-  function isJsonEndpoint(promptKey) {
-    return !!["rhyming", "thesaurus", "sortGroceriesJson"].find((key) => key === promptKey);
+  function isJsonPrompt(promptKey) {
+    return !!["rhyming", "thesaurus", "sortGroceriesJson", "suggestTasks"].find((key) => key === promptKey);
   }
   function useLongContentContext(promptKey) {
     return ["continue", "insertTextComplete"].includes(promptKey);
@@ -87,7 +88,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     return !smartModel;
   }
   function frequencyPenaltyFromPromptKey(promptKey) {
-    if (["rhyming", "thesaurus"].find((key) => key === promptKey)) {
+    if (["rhyming", "suggestTasks", "thesaurus"].find((key) => key === promptKey)) {
       return 2;
     } else if (["answer"].find((key) => key === promptKey)) {
       return 1;
@@ -96,6 +97,118 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     } else {
       return 0;
     }
+  }
+
+  // lib/util.js
+  function truncate(text, limit) {
+    return text.length > limit ? text.slice(0, limit) : text;
+  }
+  function arrayFromJumbleResponse(response) {
+    if (!response)
+      return null;
+    const splitWords = (gobbledeegoop) => {
+      let words;
+      if (Array.isArray(gobbledeegoop)) {
+        words = gobbledeegoop;
+      } else if (gobbledeegoop.includes(",")) {
+        words = gobbledeegoop.split(",");
+      } else if (gobbledeegoop.includes("\n")) {
+        words = gobbledeegoop.split("\n");
+      } else {
+        words = [gobbledeegoop];
+      }
+      return words.map((w) => w.trim());
+    };
+    let properArray;
+    if (Array.isArray(response)) {
+      properArray = response.reduce((arr, gobbledeegoop) => arr.concat(splitWords(gobbledeegoop)), []);
+    } else {
+      properArray = splitWords(response);
+    }
+    return properArray;
+  }
+  async function trimNoteContentFromAnswer(app, answer, { replaceToken = null, replaceIndex = null } = {}) {
+    const noteUUID = app.context.noteUUID;
+    const note = await app.notes.find(noteUUID);
+    const noteContent = await note.content();
+    let refinedAnswer = answer;
+    if (replaceIndex || replaceToken) {
+      replaceIndex = replaceIndex || noteContent.indexOf(replaceToken);
+      const upToReplaceToken = noteContent.substring(0, replaceIndex - 1);
+      const substring = upToReplaceToken.match(/(?:[\n\r.]|^)(.*)$/)?.[1];
+      const maxSentenceStartLength = 100;
+      const sentenceStart = !substring || substring.length > maxSentenceStartLength ? null : substring;
+      if (replaceToken) {
+        refinedAnswer = answer.replace(replaceToken, "").trim();
+        if (sentenceStart && sentenceStart.trim().length > 1) {
+          console.debug(`Replacing sentence start fragment: "${sentenceStart}"`);
+          refinedAnswer = refinedAnswer.replace(sentenceStart, "");
+        }
+        const afterTokenIndex = replaceIndex + replaceToken.length;
+        const afterSentence = noteContent.substring(afterTokenIndex + 1, afterTokenIndex + 100).trim();
+        if (afterSentence.length) {
+          const afterSentenceIndex = refinedAnswer.indexOf(afterSentence);
+          if (afterSentenceIndex !== -1) {
+            console.error("OpenAI seems to have returned content after prompt. Truncating");
+            refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
+          }
+        }
+      }
+    }
+    const originalLines = noteContent.split("\n").map((w) => w.trim());
+    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim())).join("\n");
+    const withoutJunkLines = cleanTextFromAnswer(withoutOriginalLines);
+    console.debug(`Answer originally ${answer.length} length, refined answer ${refinedAnswer.length}. Without repeated lines ${withoutJunkLines.length} length`);
+    return withoutJunkLines.trim();
+  }
+  function balancedJsonFromString(string) {
+    const jsonStart = string.indexOf("{");
+    if (jsonStart === -1)
+      return null;
+    const jsonAndAfter = string.substring(jsonStart).trim();
+    const pendingBalance = [];
+    let jsonText = "";
+    for (const char of jsonAndAfter) {
+      jsonText += char;
+      if (char === "{") {
+        pendingBalance.push("}");
+      } else if (char === "}") {
+        if (pendingBalance[pendingBalance.length - 1] === "}")
+          pendingBalance.pop();
+      } else if (char === "[") {
+        pendingBalance.push("]");
+      } else if (char === "]") {
+        if (pendingBalance[pendingBalance.length - 1] === "]")
+          pendingBalance.pop();
+      }
+      if (pendingBalance.length === 0)
+        break;
+    }
+    if (pendingBalance.length) {
+      console.debug("Found", pendingBalance.length, "characters to append to balance", jsonText, ". Adding ", pendingBalance.reverse().join(""));
+      jsonText += pendingBalance.reverse().join("");
+    }
+    return jsonText;
+  }
+  function arrayFromResponseString(responseString) {
+    if (typeof responseString !== "string")
+      return null;
+    const listItems = responseString.match(/^[\-*\d.]+\s+(.*)$/gm);
+    if (listItems?.length) {
+      return listItems.map((item) => optionWithoutPrefix(item));
+    } else {
+      return null;
+    }
+  }
+  function optionWithoutPrefix(option) {
+    if (!option)
+      return option;
+    const withoutStarAndNumber = option.trim().replace(/^[\-*\d.]+\s+/, "");
+    const withoutCheckbox = withoutStarAndNumber.replace(/^-?\s*\[\s*]\s+/, "");
+    return withoutCheckbox;
+  }
+  function cleanTextFromAnswer(answer) {
+    return answer.split("\n").filter((line) => !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
   }
 
   // lib/fetch-json.js
@@ -131,38 +244,39 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
   function extractJsonFromString(string) {
     const jsonStart = string.indexOf("{");
-    if (jsonStart === -1)
+    const jsonEnd = string.lastIndexOf("}");
+    if (jsonStart === -1 || jsonEnd === -1)
       return null;
-    const jsonAndAfter = string.substring(jsonStart).trim();
-    let openBrackets = 0, jsonText = "";
-    for (const char of jsonAndAfter) {
-      jsonText += char;
-      if (char === "{") {
-        openBrackets += 1;
-      } else if (char === "}") {
-        openBrackets -= 1;
-      }
-      if (openBrackets === 0)
-        break;
-    }
+    let jsonText = string.substring(jsonStart, jsonEnd + 1);
     let json;
     try {
       json = JSON.parse(jsonText);
     } catch (e) {
       console.error("Failed to parse jsonText", e);
-      const reformattedText = jsonText.replaceAll(`""`, `"`);
-      if (reformattedText !== jsonText) {
-        try {
-          json = JSON.parse(reformattedText);
-        } catch (e2) {
-          console.error("Reformatted text still fails", e2);
+      jsonText = balancedJsonFromString(jsonText);
+      try {
+        json = JSON.parse(jsonText);
+      } catch (e2) {
+        console.error("Rebalanced jsonText still fails", e2);
+      }
+      if (!json) {
+        let reformattedText = jsonText.replace(/"""/g, `"\\""`).replace(/"\n/g, `"\\n`);
+        reformattedText = reformattedText.replace(/\n\s*['“”]/g, `
+"`).replace(/['“”],\s*\n/g, `",
+`).replace(/['“”]\s*([\n\]])/, `"$1`);
+        if (reformattedText !== jsonText) {
+          try {
+            json = JSON.parse(reformattedText);
+          } catch (e2) {
+            console.error("Reformatted text still fails", e2);
+          }
         }
       }
     }
     return json;
   }
   async function responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds = 30 } = {}) {
-    const jsonResponseExpected = isJsonEndpoint(promptKey);
+    const jsonResponseExpected = isJsonPrompt(promptKey);
     let result;
     if (streamCallback) {
       result = await responseTextFromStreamResponse(app, response, model, jsonResponseExpected, streamCallback);
@@ -184,11 +298,15 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         throw e;
       }
     }
+    const resultBeforeTransform = result;
     if (jsonResponseExpected) {
       result = extractJsonFromString(result);
     }
     if (!allowResponse || allowResponse(result)) {
       return result;
+    }
+    if (resultBeforeTransform) {
+      console.debug("Received", resultBeforeTransform, "but could not parse as a valid result");
     }
     return null;
   }
@@ -324,7 +442,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   // lib/fetch-ollama.js
   async function callOllama(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     const stream = shouldStream(plugin2);
-    const jsonEndpoint = isJsonEndpoint(promptKey);
+    const jsonEndpoint = isJsonPrompt(promptKey);
     let response;
     const streamCallback = stream ? streamAccumulate.bind(null, modelsQueried) : null;
     if (jsonEndpoint) {
@@ -530,7 +648,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       app.alert("Please configure your OpenAI key in plugin settings.");
       return null;
     }
-    const jsonResponseExpected = isJsonEndpoint(promptKey);
+    const jsonResponseExpected = isJsonPrompt(promptKey);
     for (let i = 0; i < retries; i++) {
       try {
         const body = { model, messages, stream: !!streamCallback };
@@ -602,72 +720,6 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     return { abort: stop, receivedContent };
   }
 
-  // lib/util.js
-  function truncate(text, limit) {
-    return text.length > limit ? text.slice(0, limit) : text;
-  }
-  function arrayFromJumbleResponse(response) {
-    if (!response)
-      return null;
-    const splitWords = (gobbledeegoop) => {
-      let words;
-      if (Array.isArray(gobbledeegoop)) {
-        words = gobbledeegoop;
-      } else if (gobbledeegoop.includes(",")) {
-        words = gobbledeegoop.split(",");
-      } else if (gobbledeegoop.includes("\n")) {
-        words = gobbledeegoop.split("\n");
-      } else {
-        words = [gobbledeegoop];
-      }
-      return words.map((w) => w.trim());
-    };
-    let properArray;
-    if (Array.isArray(response)) {
-      properArray = response.reduce((arr, gobbledeegoop) => arr.concat(splitWords(gobbledeegoop)), []);
-    } else {
-      properArray = splitWords(response);
-    }
-    return properArray;
-  }
-  async function trimNoteContentFromAnswer(app, answer, { replaceToken = null, replaceIndex = null } = {}) {
-    const noteUUID = app.context.noteUUID;
-    const note = await app.notes.find(noteUUID);
-    const noteContent = await note.content();
-    let refinedAnswer = answer;
-    if (replaceIndex || replaceToken) {
-      replaceIndex = replaceIndex || noteContent.indexOf(replaceToken);
-      const upToReplaceToken = noteContent.substring(0, replaceIndex - 1);
-      const substring = upToReplaceToken.match(/(?:[\n\r.]|^)(.*)$/)?.[1];
-      const maxSentenceStartLength = 100;
-      const sentenceStart = !substring || substring.length > maxSentenceStartLength ? null : substring;
-      if (replaceToken) {
-        refinedAnswer = answer.replace(replaceToken, "").trim();
-        if (sentenceStart && sentenceStart.trim().length > 1) {
-          console.debug(`Replacing sentence start fragment: "${sentenceStart}"`);
-          refinedAnswer = refinedAnswer.replace(sentenceStart, "");
-        }
-        const afterTokenIndex = replaceIndex + replaceToken.length;
-        const afterSentence = noteContent.substring(afterTokenIndex + 1, afterTokenIndex + 100).trim();
-        if (afterSentence.length) {
-          const afterSentenceIndex = refinedAnswer.indexOf(afterSentence);
-          if (afterSentenceIndex !== -1) {
-            console.error("OpenAI seems to have returned content after prompt. Truncating");
-            refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
-          }
-        }
-      }
-    }
-    const originalLines = noteContent.split("\n").map((w) => w.trim());
-    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim())).join("\n");
-    const withoutJunkLines = cleanTextFromAnswer(withoutOriginalLines);
-    console.debug(`Answer originally ${answer.length} length, refined answer ${refinedAnswer.length}. Without repeated lines ${withoutJunkLines.length} length`);
-    return withoutJunkLines.trim();
-  }
-  function cleanTextFromAnswer(answer) {
-    return answer.split("\n").filter((line) => !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
-  }
-
   // lib/prompts.js
   function promptsFromPromptKey(promptKey, promptParams, contentIndex, rejectedResponses, aiModel, inputLimit = DEFAULT_CHARACTER_LIMIT) {
     let messages = [];
@@ -700,9 +752,96 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
     reviseText: "You are a helpful assistant that revises text, as instructed.",
     rhyming: "You are a helpful rhyming word generator that responds in JSON with an array of rhyming words",
     sortGroceriesJson: "You are a helpful assistant that responds in JSON with sorted groceries using the 'instruction' key as a guide",
+    suggestTasks: "You are a Fortune 100 CEO that returns an array of insightful tasks within the 'result' key of a JSON response",
     summarize: "You are a helpful assistant that summarizes notes that are markdown-formatted.",
     thesaurus: "You are a helpful thesaurus that responds in JSON with an array of alternate word choices that fit the context provided"
   };
+  function messageArrayFromPrompt(promptKey, promptParams) {
+    const userPrompts = {
+      answer: ({ instruction }) => [
+        `Succinctly answer the following question: ${instruction}`,
+        "Do not explain your answer. Do not mention the question that was asked. Do not include unnecessary punctuation."
+      ],
+      answerSelection: ({ text }) => [text],
+      complete: ({ noteContent }) => `Continue the following markdown-formatted content:
+
+${noteContent}`,
+      reviseContent: ({ noteContent, instruction }) => [instruction, noteContent],
+      reviseText: ({ instruction, text }) => [instruction, text],
+      rhyming: ({ noteContent, text }) => [
+        JSON.stringify({
+          instruction: `Respond with a JSON object containing ONLY ONE KEY called "result", that contains a JSON array of up to 10 rhyming words or phrases`,
+          rhymesWith: text,
+          rhymingWordContext: noteContent.replace(text, `<replace>${text}</replace>`),
+          example: { input: { rhymesWith: "you" }, response: { result: ["knew", "blue", "shoe", "slew", "shrew", "debut", "voodoo", "field of view", "kangaroo", "view"] } }
+        })
+      ],
+      sortGroceriesText: ({ groceryArray }) => [
+        `Sort the following list of groceries by where it can be found in the grocery store:`,
+        `- [ ] ${groceryArray.join(`
+- [ ]`)}`,
+        `Prefix each grocery aisle (each task section) with a "# ".
+
+For example, if the input groceries were "Bananas", "Donuts", and "Bread", then the correct answer would be "# Produce
+[ ] Bananas
+
+# Bakery
+[ ] Donuts
+[ ] Bread"`,
+        `DO NOT RESPOND WITH ANY EXPLANATION, only groceries and aisles. Return the exact same ${groceryArray.length} groceries provided in the array, without additions or subtractions.`
+      ],
+      sortGroceriesJson: ({ groceryArray }) => [
+        JSON.stringify({
+          instruction: `Respond with a JSON object, where the key is the aisle/department in which a grocery can be found, and the value is the array of groceries that can be found in that aisle/department.
+
+Return the EXACT SAME ${groceryArray.length} groceries from the "groceries" key, without additions or subtractions.`,
+          groceries: groceryArray,
+          example: {
+            input: { groceries: [" Bananas", "Donuts", "Grapes", "Bread", "salmon fillets"] },
+            response: { "Produce": ["Bananas", "Grapes"], "Bakery": ["Donuts", "Bread"], "Seafood": ["salmon fillets"] }
+          }
+        })
+      ],
+      suggestTasks: ({ noteContent, text }) => [
+        JSON.stringify({
+          instruction: `Respond with a JSON object that contains an array of 10 tasks that will be inserted at the <inserTasks> token in the provided markdown content`,
+          taskContext: noteContent.replace(text, `<insertTasks>`),
+          example: {
+            input: { taskContext: `# Clean the house
+- [ ] Mop the floors
+<insertTasks>` },
+            response: { result: [
+              "Dust the living room furniture",
+              "Fold and put away the laundry",
+              "Water indoor plants",
+              "Hang up any recent mail",
+              "Fold and put away laundry",
+              "Take out the trash & recycling",
+              "Wipe down bathroom mirrors & counter",
+              "Sweep the entry and porch",
+              "Organize the pantry",
+              "Vacuum"
+            ] }
+          }
+        })
+      ],
+      summarize: ({ noteContent }) => `Summarize the following markdown-formatted note:
+
+${noteContent}`,
+      thesaurus: ({ noteContent, text }) => [
+        JSON.stringify({
+          instruction: `Respond with a JSON object containing ONLY ONE KEY called "result". The value for the "result" key should be a 10-element array of the best words or phrases to replace "${text}" while remaining consistent with the included "replaceWordContext" markdown document.`,
+          replaceWord: text,
+          replaceWordContext: noteContent.replace(text, `<replaceWord>${text}</replaceWord>`),
+          example: {
+            input: { replaceWord: "helpful", replaceWordContext: "Mother always said that I should be <replaceWord>helpful</replaceWord> with my coworkers" },
+            response: { result: ["useful", "friendly", "constructive", "cooperative", "sympathetic", "supportive", "kind", "considerate", "beneficent", "accommodating"] }
+          }
+        })
+      ]
+    };
+    return userPrompts[promptKey]({ ...promptParams });
+  }
   function userPromptFromPromptKey(promptKey, promptParams, contentIndex, aiModel, inputLimit) {
     const { noteContent } = promptParams;
     let boundedContent = noteContent || "";
@@ -752,69 +891,6 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     }
     console.debug("Got user messages", userPrompts, "for", promptKey, "given promptParams", promptParams);
     return userPrompts;
-  }
-  function messageArrayFromPrompt(promptKey, promptParams) {
-    const userPrompts = {
-      answer: ({ instruction }) => [
-        `Succinctly answer the following question: ${instruction}`,
-        "Do not explain your answer. Do not mention the question that was asked. Do not include unnecessary punctuation."
-      ],
-      answerSelection: ({ text }) => [text],
-      complete: ({ noteContent }) => `Continue the following markdown-formatted content:
-
-${noteContent}`,
-      reviseContent: ({ noteContent, instruction }) => [instruction, noteContent],
-      reviseText: ({ instruction, text }) => [instruction, text],
-      rhyming: ({ noteContent, text }) => [
-        JSON.stringify({
-          instruction: `Respond with a JSON object containing ONLY ONE KEY called "result", that contains a JSON array of up to 10 rhyming words or phrases`,
-          rhymesWith: text,
-          rhymingWordContext: noteContent.replace(text, `<replace>${text}</replace>`),
-          example: { input: { rhymesWith: "you" }, response: { result: ["knew", "blue", "shoe", "slew", "shrew", "debut", "voodoo", "field of view", "kangaroo", "view"] } }
-        })
-      ],
-      sortGroceriesText: ({ groceryArray }) => [
-        `Sort the following list of groceries by where it can be found in the grocery store:`,
-        `- [ ] ${groceryArray.join(`
-- [ ]`)}`,
-        `Prefix each grocery aisle (each task section) with a "# ".
-
-For example, if the input groceries were "Bananas", "Donuts", and "Bread", then the correct answer would be "# Produce
-[ ] Bananas
-
-# Bakery
-[ ] Donuts
-[ ] Bread"`,
-        `DO NOT RESPOND WITH ANY EXPLANATION, only groceries and aisles. Return the exact same ${groceryArray.length} groceries provided in the array, without additions or subtractions.`
-      ],
-      sortGroceriesJson: ({ groceryArray }) => [
-        JSON.stringify({
-          instruction: `Respond with a JSON object, where the key is the aisle/department in which a grocery can be found, and the value is the array of groceries that can be found in that aisle/department.
-
-Return the EXACT SAME ${groceryArray.length} groceries from the "groceries" key, without additions or subtractions.`,
-          groceries: groceryArray,
-          example: {
-            input: { groceries: [" Bananas", "Donuts", "Grapes", "Bread", "salmon fillets"] },
-            response: { "Produce": ["Bananas", "Grapes"], "Bakery": ["Donuts", "Bread"], "Seafood": ["salmon fillets"] }
-          }
-        })
-      ],
-      summarize: ({ noteContent }) => `Summarize the following markdown-formatted note:
-
-${noteContent}`,
-      thesaurus: ({ noteContent, text }) => [
-        JSON.stringify({
-          instruction: `Respond with a JSON object containing ONLY ONE KEY called "result". The value for the "result" key should be a 10-element array of the best words or phrases to replace "${text}" while remaining consistent with the included "replaceWordContext" markdown document.`,
-          replaceWord: text,
-          replaceWordContext: noteContent.replace(text, `<replaceWord>${text}</replaceWord>`),
-          example: {
-            input: { replaceWord: "helpful", replaceWordContext: "Mother always said that I should be <replaceWord>helpful</replaceWord> with my coworkers" },
-            response: { result: ["useful", "friendly", "constructive", "cooperative", "sympathetic", "supportive", "kind", "considerate", "beneficent", "accommodating"] }
-          }
-        })
-      ]
-    };
-    return userPrompts[promptKey]({ ...promptParams });
   }
   function relevantContentFromContent(content, contentIndex, contentLimit) {
     if (content && content.length > contentLimit) {
@@ -1100,7 +1176,7 @@ Will be utilized after your preliminary approval`,
   function groceryArrayFromContent(content) {
     const lines = content.split("\n");
     const groceryLines = lines.filter((line) => line.match(/^[-*\[]\s/));
-    const groceryArray = groceryLines.map((line) => line.replace(/^[-*\[\]\s]+/g, "").replace(/<!--.*-->/g, "").trim());
+    const groceryArray = groceryLines.map((line) => optionWithoutPrefix(line).replace(/<!--.*-->/g, "").trim());
     return groceryArray;
   }
   async function groceryContentFromJsonOrText(plugin2, app, noteUUID, groceryArray) {
@@ -1290,6 +1366,93 @@ Will be utilized after your preliminary approval`,
     });
   }
 
+  // lib/functions/suggest-tasks.js
+  async function taskArrayFromSuggestions(plugin2, app, contentIndexText) {
+    const allowResponse = (response2) => {
+      const validJson = typeof response2 === "object" && (response2.result || response2.response?.result || response2.input?.response?.result || response2.input?.result);
+      const validString = typeof response2 === "string" && arrayFromResponseString(response2)?.length;
+      return validJson || validString;
+    };
+    const response = await notePromptResponse(
+      plugin2,
+      app,
+      app.context.noteUUID,
+      "suggestTasks",
+      {},
+      {
+        allowResponse,
+        contentIndexText
+      }
+    );
+    if (response) {
+      const chosenTasks = [];
+      let unchosenTasks = taskArrayFromResponse(response);
+      while (true) {
+        const promptOptions = unchosenTasks.map((t) => ({ label: t, value: t }));
+        if (!promptOptions.length)
+          break;
+        promptOptions.push({ label: "Done picking tasks", value: "done" });
+        const insertTask = await app.prompt("Choose tasks to add", {
+          inputs: [
+            {
+              label: "Choose a task to insert",
+              options: promptOptions,
+              type: "radio"
+            }
+          ]
+        });
+        if (insertTask && insertTask !== "done") {
+          chosenTasks.push(insertTask);
+          unchosenTasks = unchosenTasks.filter((task) => !chosenTasks.includes(task));
+          const taskArray = chosenTasks.map((task) => `- [ ] ${task}
+`);
+          await app.context.replaceSelection(`
+${taskArray.join("\n")}`);
+        } else {
+          break;
+        }
+      }
+    } else {
+      app.alert("Could not determine any tasks to suggest from the existing note content");
+      return null;
+    }
+  }
+  function taskArrayFromResponse(response) {
+    if (typeof response === "string") {
+      return arrayFromResponseString(response);
+    } else {
+      let tasks = response.result || response.response?.result || response.input?.response?.result || response.input?.result;
+      if (typeof tasks === "object" && !Array.isArray(tasks)) {
+        tasks = Object.values(tasks);
+        if (Array.isArray(tasks) && Array.isArray(tasks[0])) {
+          tasks = tasks[0];
+        }
+      }
+      if (!Array.isArray(tasks)) {
+        console.error("Could not determine tasks from response", response);
+        return [];
+      }
+      if (tasks.find((t) => typeof t !== "string")) {
+        tasks = tasks.map((task) => {
+          if (typeof task === "string") {
+            return task;
+          } else if (Array.isArray(task)) {
+            return task[0];
+          } else {
+            const objectValues = Object.values(task);
+            return objectValues[0];
+          }
+        });
+      }
+      if (tasks.length === 1 && tasks[0].includes("\n")) {
+        tasks = tasks[0].split("\n");
+      }
+      const tasksWithoutPrefix = tasks.map((taskText) => optionWithoutPrefix(taskText));
+      console.debug("Received tasks", tasksWithoutPrefix);
+      return tasksWithoutPrefix;
+    }
+  }
+
   // lib/plugin.js
   var plugin = {
     // --------------------------------------------------------------------------------------
@@ -1395,6 +1558,11 @@ Will be utilized after your preliminary approval`,
         if (apiKey) {
           await imageFromPrompt(this, app, apiKey);
         }
+      },
+      // --------------------------------------------------------------------------
+      [SUGGEST_TASKS_LABEL]: async function(app) {
+        const contentIndexText = `${PLUGIN_NAME}: ${SUGGEST_TASKS_LABEL}`;
+        return await taskArrayFromSuggestions(this, app, contentIndexText);
       }
     },
     // --------------------------------------------------------------------------
@@ -1570,7 +1738,7 @@ ${trimmedResponse || aiResponse}`, {
       } else {
         return null;
       }
-      const optionList = options.map((word) => word.replace(/^[\d\-]+\.?[\s]?/g, ""))?.map((word) => word.trim())?.filter((n) => n.length && n.split(" ").length <= MAX_REALISTIC_THESAURUS_RHYME_WORDS);
+      const optionList = options.map((word) => optionWithoutPrefix(word))?.map((word) => word.trim())?.filter((n) => n.length && n.split(" ").length <= MAX_REALISTIC_THESAURUS_RHYME_WORDS);
       if (optionList?.length) {
         console.debug("Presenting option list", optionList);
         const selectedValue = await app.prompt(`Choose a replacement for "${text}"`, {
