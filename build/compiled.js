@@ -981,7 +981,7 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         const modelLabel = model.split(":")[0];
         actions.push({ icon: "settings", label: `Try ${modelLabel}${preferredModels.length <= 2 && model === modelUsed ? " again" : ""}` });
       });
-      const primaryAction = { icon: "post_add", label: "Accept" };
+      const primaryAction = { icon: "check_circle", label: "Accept" };
       let responseAsText = response, jsonResponse = false;
       if (typeof response === "object") {
         if (response.result?.length) {
