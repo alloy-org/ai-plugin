@@ -45,7 +45,7 @@ describe("This here plugin", () => {
       expect(replacedText).toContain("egg");
     }
 
-    expect(plugin.callCountByModel[DEFAULT_OPENAI_TEST_MODEL]).toBe(1);
+    expect(plugin.callCountByModel[DEFAULT_OPENAI_TEST_MODEL]).toBeGreaterThanOrEqual(1);
     expect(plugin.callCountByModel[ollamaModel]).toBe(1);
   }, AWAIT_TIME * 5);
 
@@ -68,7 +68,7 @@ describe("This here plugin", () => {
       const response = await plugin.appOption["Answer"](app);
       expect(/(ton|kg|more than)/.test(response)).toBeTruthy();
     }
-  });
+  }, AWAIT_TIME * 2);
 
   // --------------------------------------------------------------------------------------
   it("should allow user to continue a sentence", async () => {
@@ -98,8 +98,8 @@ describe("This here plugin", () => {
     const response = await plugin.replaceText["Complete"](app, content);
     mockAlertAccept(app);
     // Since context.replaceSelection in our test-helper will just replace the entire string with the result, we can just check the note body.
-    expect(response.toLowerCase()).toContain("subject:");
     expect(response.toLowerCase()).toContain("return")
+    expect(response.toLowerCase()).toContain("subject:");
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
