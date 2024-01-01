@@ -1379,6 +1379,7 @@ Will be utilized after your preliminary approval`,
       const validString = typeof response2 === "string" && arrayFromResponseString(response2)?.length;
       return validJson || validString;
     };
+    const chosenTasks = [];
     const response = await notePromptResponse(
       plugin2,
       app,
@@ -1391,7 +1392,6 @@ Will be utilized after your preliminary approval`,
       }
     );
     if (response) {
-      const chosenTasks = [];
       let unchosenTasks = taskArrayFromResponse(response);
       while (true) {
         const promptOptions = unchosenTasks.map((t) => ({ label: t, value: t }));
@@ -1411,11 +1411,6 @@ Will be utilized after your preliminary approval`,
         if (insertTask) {
           chosenTasks.push(insertTask);
           unchosenTasks = unchosenTasks.filter((task) => !chosenTasks.includes(task));
-          const taskArray = chosenTasks.map((task) => `- [ ] ${task}
-`);
-          console.debug("Replacing with tasks", taskArray);
-          await app.context.replaceSelection(`
-${taskArray.join("\n")}`);
           if (insertTask === "done")
             break;
         } else {
@@ -1426,6 +1421,14 @@ ${taskArray.join("\n")}`);
       app.alert("Could not determine any tasks to suggest from the existing note content");
       return null;
     }
+    if (chosenTasks.length) {
+      const taskArray = chosenTasks.map((task) => `- [ ] ${task}
+`);
+      console.debug("Replacing with tasks", taskArray);
+      await app.context.replaceSelection(`
+${taskArray.join("\n")}`);
+    }
+    return null;
   }
   function taskArrayFromResponse(response) {
     if (typeof response === "string") {
