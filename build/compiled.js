@@ -802,12 +802,17 @@ Return the EXACT SAME ${groceryArray.length} groceries from the "groceries" key,
           }
         })
       ],
-      suggestTasks: ({ noteContent, text }) => [
+      suggestTasks: ({ noteContent, noteName, text }) => [
         JSON.stringify({
           instruction: `Respond with a JSON object that contains an array of 10 tasks that will be inserted at the <inserTasks> token in the provided markdown content`,
-          taskContext: noteContent.replace(text, `<insertTasks>`),
+          taskContext: `Title: ${noteName}
+
+Content:
+${noteContent.replace(text, `<insertTasks>`)}`,
           example: {
-            input: { taskContext: `# Clean the house
+            input: { taskContext: `Title: Clean the house
+
+Content: 
 - [ ] Mop the floors
 <insertTasks>` },
             response: { result: [
@@ -938,10 +943,11 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     allowResponse = null,
     contentIndexText
   } = {}) {
-    let noteContent = "";
+    let noteContent = "", noteName = "";
     if (noteUUID) {
       const note = await app.notes.find(noteUUID);
       noteContent = await note.content();
+      noteName = note.name;
     }
     preferredModels = preferredModels || await recommendedAiModels(plugin2, app, promptKey);
     if (!preferredModels.length)
@@ -954,7 +960,7 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       plugin2,
       app,
       promptKey,
-      { ...promptParams, noteContent },
+      { ...promptParams, noteContent, noteName },
       { allowResponse, contentIndex, preferredModels, rejectedResponses }
     );
     if (response === null) {
@@ -1392,22 +1398,26 @@ Will be utilized after your preliminary approval`,
         if (!promptOptions.length)
           break;
         promptOptions.push({ label: "Done picking tasks", value: "done" });
-        const insertTask = await app.prompt("Choose tasks to add", {
+        const insertTask = await app.prompt(`Which tasks would you like to add to your note?`, {
           inputs: [
             {
-              label: "Choose a task to insert",
+              label: "Choose tasks",
               options: promptOptions,
-              type: "radio"
+              type: "radio",
+              value: promptOptions[0].value
             }
           ]
         });
-        if (insertTask && insertTask !== "done") {
+        if (insertTask) {
           chosenTasks.push(insertTask);
           unchosenTasks = unchosenTasks.filter((task) => !chosenTasks.includes(task));
           const taskArray = chosenTasks.map((task) => `- [ ] ${task}
 `);
+          console.debug("Replacing with tasks", taskArray);
           await app.context.replaceSelection(`
 ${taskArray.join("\n")}`);
+          if (insertTask === "done")
+            break;
         } else {
           break;
         }
