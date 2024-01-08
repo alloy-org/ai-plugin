@@ -216,9 +216,9 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   function shouldStream(plugin2) {
     return !plugin2.constants.isTestEnvironment;
   }
-  function streamPrefaceString(aiModel, modelsQueried, jsonResponseExpected) {
+  function streamPrefaceString(aiModel, modelsQueried, promptKey, jsonResponseExpected) {
     let responseText = "";
-    if (modelsQueried.length > 1) {
+    if (["chat"].indexOf(promptKey) === -1 && modelsQueried.length > 1) {
       responseText += `Response from ${modelsQueried[modelsQueried.length - 1]} was rejected as invalid.
 `;
     }
@@ -445,7 +445,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const stream = shouldStream(plugin2);
     const jsonEndpoint = isJsonPrompt(promptKey);
     let response;
-    const streamCallback = stream ? streamAccumulate.bind(null, modelsQueried) : null;
+    const streamCallback = stream ? streamAccumulate.bind(null, modelsQueried, promptKey) : null;
     if (jsonEndpoint) {
       response = await responsePromiseFromGenerate(
         app,
@@ -550,7 +550,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       { timeoutSeconds }
     );
   }
-  function streamAccumulate(modelsQueriedArray, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
+  function streamAccumulate(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let jsonResponse, content = "";
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
     for (const response of responses) {
@@ -573,7 +573,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       receivedContent += content;
       const userSelection = app.alert(receivedContent, {
         actions: [{ icon: "pending", label: "Generating response" }],
-        preface: streamPrefaceString(aiModel, modelsQueriedArray, jsonResponseExpected),
+        preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
         scrollToEnd: true
       });
       if (userSelection === 0) {
@@ -619,7 +619,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   // lib/fetch-openai.js
   async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
-    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried) : null;
+    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, propmtKey) : null;
     try {
       return await requestWithRetry(
         app,
@@ -695,7 +695,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       }
     }
   }
-  function streamAccumulate2(modelsQueriedArray, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
+  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
     let stop = false;
     const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
     for (const jsonString of responses) {
@@ -710,7 +710,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         receivedContent += content;
         app.alert(receivedContent, {
           actions: [{ icon: "pending", label: "Generating response" }],
-          preface: streamPrefaceString(aiModel, modelsQueriedArray, jsonResponseExpected),
+          preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
           scrollToEnd: true
         });
       } else {
