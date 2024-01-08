@@ -619,7 +619,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   // lib/fetch-openai.js
   async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
-    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, propmtKey) : null;
+    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, promptKey) : null;
     try {
       return await requestWithRetry(
         app,
