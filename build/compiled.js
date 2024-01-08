@@ -218,9 +218,10 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
   function streamPrefaceString(aiModel, modelsQueried, jsonResponseExpected) {
     let responseText = "";
-    if (modelsQueried.length > 1)
+    if (modelsQueried.length > 1) {
       responseText += `Response from ${modelsQueried[modelsQueried.length - 1]} was rejected as invalid.
 `;
+    }
     responseText += `${aiModel} is now generating ${jsonResponseExpected ? "JSON " : ""}response...`;
     return responseText;
   }
@@ -1157,6 +1158,7 @@ Will be utilized after your preliminary approval`,
     } else {
       promptHistory = [{ content: "What's on your mind?", role: "assistant" }];
     }
+    const modelsQueried = [];
     while (true) {
       const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.content}`).join("\n\n");
       const [userMessage, modelToUse] = await app.prompt(conversation, {
@@ -1166,13 +1168,14 @@ Will be utilized after your preliminary approval`,
             type: "radio",
             label: "Send to",
             options: aiModels.map((model) => ({ label: model, value: model })),
-            value: plugin2.lastModelUsed
+            value: plugin2.lastModelUsed || aiModels[0]
           }
         ]
       }, { scrollToBottom: true });
       if (modelToUse) {
         promptHistory.push({ role: "user", content: userMessage });
-        const response = await responseFromPrompts(plugin2, app, modelToUse, "chat", promptHistory);
+        modelsQueried.push(modelToUse);
+        const response = await responseFromPrompts(plugin2, app, modelToUse, "chat", promptHistory, { modelsQueried });
         if (response) {
           promptHistory.push({ role: "assistant", content: `[${modelToUse}] ${response}` });
           const alertResponse = await app.alert(response, { preface: conversation, actions: [{ icon: "navigate_next", label: "Ask a follow up question" }] });
@@ -1540,8 +1543,17 @@ ${taskArray.join("\n")}`);
         const callCountByModelText = Object.keys(callCountByModel).map((model) => `${model}: ${callCountByModel[model]}`).join("\n");
         const errorCountByModel = this.errorCountByModel;
         const errorCountByModelText = Object.keys(errorCountByModel).map((model) => `${model}: ${errorCountByModel[model]}`).join("\n");
-        await app.alert(`Since the app was last started on this platform:
-` + callCountByModelText + "\n\nError counts:\n" + errorCountByModelText);
+        let alertText = `Since the app was last started on this platform:
+${callCountByModelText}
+
+`;
+        if (errorCountByModelText.length) {
+          alertText += `Errors:
+` + errorCountByModelText;
+        } else {
+          alertText += `No errors reported.`;
+        }
+        await app.alert(alertText);
       },
       // --------------------------------------------------------------------------
       "Answer": async function(app) {
