@@ -21,6 +21,7 @@ describe("This here plugin", () => {
 
     // Mock the OpenAI API call
     nock("https://api.openai.com")
+      .persist()
       .post("/v1/chat/completions")
       .replyWithFile(200, path.join(__dirname, "fixtures/openai-thesaurus-stream.ndjson"), {
         "Transfer-Encoding": "chunked",
