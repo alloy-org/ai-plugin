@@ -37,7 +37,7 @@ describe("This here plugin", () => {
     expect(plugin.replaceText["Answer"].check(app, content)).toBe(true);
     expect(plugin.replaceText["Answer"].check(app, "This is not a question!")).toBe(false);
     mockAlertAccept(app);
-    const ollamaModel = "llama2"
+    const ollamaModel = "llama2";
     for (const aiModel of [ ollamaModel, DEFAULT_OPENAI_TEST_MODEL ]) {
       app.setSetting(AI_MODEL_LABEL, aiModel);
       console.log("What does", aiModel, "say about", content, "?");
