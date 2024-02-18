@@ -1,10 +1,15 @@
+import fs from "fs"
 import { OPENAI_KEY_LABEL } from "../lib/constants/settings"
 import dotenv from "dotenv"
 import fetch from "isomorphic-fetch"
 import { jest } from "@jest/globals"
 import pluginObject from "../lib/plugin"
+import path from "path"
+import { fileURLToPath } from "url"
 
 dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 const PLUGIN_INTERFACES = [ "appOption", "dailyJotOption", "imageOption", "insertText", "linkOption", "noteOption", "replaceText" ];
 
@@ -18,7 +23,7 @@ export function mockAlertAccept(app) {
 }
 
 // --------------------------------------------------------------------------------------
-export const mockPlugin = () => {
+export function mockPlugin() {
   const plugin = pluginObject;
   global.fetch = fetch;
 
@@ -47,14 +52,14 @@ export const mockPlugin = () => {
 }
 
 // --------------------------------------------------------------------------------------
-export const mockAppWithContent = content => {
+export function mockAppWithContent(content) {
   const note = mockNote(content, "Baby's first plugin", "abc123");
   const app = mockApp(note);
   return { app, note };
 }
 
 // --------------------------------------------------------------------------------------
-export const mockApp = seedNote => {
+export function mockApp(seedNote) {
   const app = {};
   app.alert = jest.fn().mockImplementation(async (text, options = {}) => {
     console.debug("Alert was called", text);
@@ -112,7 +117,13 @@ export const mockApp = seedNote => {
 }
 
 // --------------------------------------------------------------------------------------
-export const mockNote = (content, name, uuid) => {
+export function fileContent(fileName) {
+  const filePath = path.join(__dirname, `fixtures/${ fileName }`);
+  return fs.readFileSync(filePath, "utf8");
+}
+
+// --------------------------------------------------------------------------------------
+export function mockNote(content, name, uuid) {
   const note = {};
   note.body = content;
   note.name = name;

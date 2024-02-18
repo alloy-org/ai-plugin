@@ -1,12 +1,6 @@
-import fs from "fs"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
-import path from "path"
-import { mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
-import { fileURLToPath } from "url"
-
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+import { fileContent, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
 
@@ -33,11 +27,11 @@ function mockFetchStream(streamArray) {
 }
 
 // --------------------------------------------------------------------------------------
-describe("This here plugin", () => {
+describe("Mocked streaming", () => {
   const plugin = mockPlugin();
   plugin.constants.isTestEnvironment = true;
   plugin.constants.streamTest = true;
-  const fileData = fs.readFileSync(path.join(__dirname, "fixtures/openai-thesaurus-stream.ndjson"), "utf8");
+  const fileData = fileContent("openai-thesaurus-stream.ndjson");
   let fetchWas;
 
   beforeEach(() => {
