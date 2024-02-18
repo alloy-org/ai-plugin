@@ -69,6 +69,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
   var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
   var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
+  var MAX_SPACES_ABORT_RESPONSE = 30;
   var SUGGEST_TASKS_LABEL = "Suggest tasks";
   var PLUGIN_NAME = "AmpleAI";
   var OPENAI_KEY_LABEL = "OpenAI API Key";
@@ -214,7 +215,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   // lib/fetch-json.js
   var streamTimeoutSeconds = 2;
   function shouldStream(plugin2) {
-    return !plugin2.constants.isTestEnvironment;
+    return !plugin2.constants.isTestEnvironment || plugin2.constants.streamTest;
   }
   function streamPrefaceString(aiModel, modelsQueried, promptKey, jsonResponseExpected) {
     let responseText = "";
@@ -243,13 +244,23 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     }
     return json;
   }
-  function extractJsonFromString(string) {
-    const jsonStart = string.indexOf("{");
-    const jsonEnd = string.lastIndexOf("}");
-    if (jsonStart === -1 || jsonEnd === -1)
+  function extractJsonFromString(inputString) {
+    let jsonText = inputString.trim();
+    const jsonStart = jsonText.indexOf("{");
+    const jsonEnd = jsonText.lastIndexOf("}");
+    if (jsonStart === -1)
       return null;
-    let jsonText = string.substring(jsonStart, jsonEnd + 1);
+    jsonText = jsonText.substring(jsonStart);
     let json;
+    if (jsonEnd === -1) {
+      if (jsonText[jsonText.length - 1] === ",")
+        jsonText = jsonText.substring(0, jsonText.length - 1);
+      if (jsonText.includes("[") && !jsonText.includes("]"))
+        jsonText += "]";
+      jsonText = `${jsonText}}`;
+    } else {
+      jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+    }
     try {
       json = JSON.parse(jsonText);
     } catch (e) {
@@ -333,6 +344,34 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       }
     });
   }
+  function jsonResponseFromStreamChunk(supposedlyJsonContent, failedParseContent) {
+    let jsonResponse;
+    const testContent = supposedlyJsonContent.replace(/^data:\s?/, "").trim();
+    try {
+      jsonResponse = JSON.parse(testContent);
+    } catch (e) {
+      console.debug("Failed to parse JSON from", testContent);
+      if (failedParseContent) {
+        try {
+          jsonResponse = JSON.parse(failedParseContent + testContent);
+        } catch (err) {
+          return { failedParseContent: failedParseContent + testContent };
+        }
+      } else {
+        const jsonStart = testContent.indexOf("{");
+        if (jsonStart) {
+          try {
+            jsonResponse = JSON.parse(testContent.substring(jsonStart));
+            return { failedParseContent: null, jsonResponse };
+          } catch (err) {
+            console.debug("Moving start position didn't fix JSON parse error");
+          }
+        }
+        return { failedParseContent: testContent };
+      }
+    }
+    return { failedParseContent: null, jsonResponse };
+  }
   async function responseTextFromStreamResponse(app, response, aiModel, responseJsonExpected, streamCallback) {
     if (typeof global !== "undefined" && typeof global.fetch !== "undefined") {
       return await streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, streamCallback);
@@ -341,34 +380,48 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     }
   }
   async function streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, callback) {
-    const responseBody = await response.body;
-    let abort, content;
-    await responseBody.on("readable", () => {
-      let failLoops = 0;
-      let receivedContent = "";
-      while (failLoops < 3) {
-        const chunk = responseBody.read();
-        if (chunk) {
-          failLoops = 0;
-          const decoded = chunk.toString();
-          const responseObject = callback(app, decoded, receivedContent, aiModel, responseJsonExpected);
-          console.debug("responseObject content", responseObject?.receivedContent);
-          ({ abort, receivedContent } = responseObject);
-          if (receivedContent)
-            content = receivedContent;
-          if (abort)
-            break;
-        } else {
-          failLoops += 1;
-        }
-      }
+    const responseBody = response.body;
+    let abort = false;
+    let content = "";
+    let failedParseContent, incrementalContents;
+    await new Promise((resolve, _reject) => {
+      const readStream = () => {
+        let failLoops = 0;
+        const processChunk = () => {
+          let receivedContent = "";
+          const chunk = responseBody.read();
+          if (chunk) {
+            failLoops = 0;
+            const decoded = chunk.toString();
+            console.debug("Seeking to incorporate", aiModel, "decoded content", decoded, "into JSON object. Existing failedParseContent", failedParseContent, "Existing content length", content?.length);
+            const responseObject = callback(app, decoded, receivedContent, aiModel, responseJsonExpected, failedParseContent);
+            ({ abort, failedParseContent, incrementalContents, receivedContent } = responseObject);
+            if (receivedContent)
+              content += receivedContent;
+            if (abort || !shouldContinueStream(incrementalContents, receivedContent)) {
+              resolve();
+              return;
+            }
+            processChunk();
+          } else {
+            failLoops += 1;
+            if (failLoops < 3) {
+              setTimeout(processChunk, streamTimeoutSeconds * 1e3);
+            } else {
+              resolve();
+            }
+          }
+        };
+        processChunk();
+      };
+      responseBody.on("readable", readStream);
     });
     return content;
   }
   async function streamWindowFetch(app, response, aiModel, responseJsonExpected, callback) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
-    let error, abort;
+    let abort, error, failedParseContent, incrementalContents;
     let failLoops = 0;
     let receivedContent = "";
     while (!error) {
@@ -393,10 +446,12 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         try {
           if (typeof decodedValue === "string") {
             failLoops = 0;
-            const response2 = callback(app, decodedValue, receivedContent, aiModel, responseJsonExpected);
+            const response2 = callback(app, decodedValue, receivedContent, aiModel, responseJsonExpected, failedParseContent);
             if (response2) {
-              ({ abort, receivedContent } = response2);
+              ({ abort, failedParseContent, incrementalContents, receivedContent } = response2);
               if (abort)
+                break;
+              if (!shouldContinueStream(incrementalContents, receivedContent))
                 break;
             } else {
               console.error("Failed to parse stream from", value, "as JSON");
@@ -415,6 +470,16 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       }
     }
     return receivedContent;
+  }
+  function shouldContinueStream(chunkStrings, accumulatedResponse) {
+    let tooMuchSpace;
+    if (chunkStrings?.length && (accumulatedResponse?.length || 0) >= MAX_SPACES_ABORT_RESPONSE) {
+      const sansNewlines = accumulatedResponse.replace(/\n/g, " ");
+      tooMuchSpace = sansNewlines.substring(sansNewlines.length - MAX_SPACES_ABORT_RESPONSE).trim() === "";
+      if (tooMuchSpace)
+        console.debug("Response exceeds empty space threshold. Aborting");
+    }
+    return !tooMuchSpace;
   }
   function extendUrlWithParameters(basePath, paramObject) {
     let path = basePath;
@@ -550,37 +615,37 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       { timeoutSeconds }
     );
   }
-  function streamAccumulate(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
+  function streamAccumulate(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
     let jsonResponse, content = "";
     const responses = decodedValue.replace(/}\s*\n\{/g, "} \n{").split(" \n");
+    const incrementalContents = [];
     for (const response of responses) {
       const parseableJson = response.replace(/"\n/, `"\\n`).replace(/"""/, `"\\""`);
-      try {
-        jsonResponse = JSON.parse(parseableJson.trim());
-      } catch (e) {
-        console.debug("Failed to parse JSON from", decodedValue);
-        console.debug("Attempting to parse yielded error", e, "Received content so far is", receivedContent, "this stream deduced", responses.length, "responses");
-        return { receivedContent };
+      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(parseableJson, failedParseContent));
+      if (jsonResponse) {
+        const responseContent = jsonResponse.message?.content || jsonResponse.response;
+        if (responseContent) {
+          incrementalContents.push(responseContent);
+          content += responseContent;
+        } else {
+          console.debug("No response content found. Response", response, "\nParses to", parseableJson, "\nWhich yields JSON received", jsonResponse);
+        }
       }
-      const responseContent = jsonResponse?.message?.content || jsonResponse?.response;
-      if (responseContent) {
-        content += responseContent;
-      } else {
-        console.debug("No response content found. Response", response, "\nParses to", parseableJson, "\nWhich yields JSON received", jsonResponse);
+      if (content) {
+        receivedContent += content;
+        const userSelection = app.alert(receivedContent, {
+          actions: [{ icon: "pending", label: "Generating response" }],
+          preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+          scrollToEnd: true
+        });
+        if (userSelection === 0) {
+          console.error("User chose to abort stream. Todo: return abort here?");
+        }
+      } else if (failedParseContent) {
+        console.debug("Attempting to parse yielded failure. Received content so far is", receivedContent, "this stream deduced", responses.length, "responses");
       }
     }
-    if (content) {
-      receivedContent += content;
-      const userSelection = app.alert(receivedContent, {
-        actions: [{ icon: "pending", label: "Generating response" }],
-        preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
-        scrollToEnd: true
-      });
-      if (userSelection === 0) {
-        console.error("User chose to abort stream. Todo: return abort here?");
-      }
-    }
-    return { abort: jsonResponse.done, receivedContent };
+    return { abort: jsonResponse.done, failedParseContent, incrementalContents, receivedContent };
   }
 
   // lib/openai-settings.js
@@ -651,6 +716,8 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     }
     const jsonResponseExpected = isJsonPrompt(promptKey);
     for (let i = 0; i < retries; i++) {
+      if (i > 0)
+        console.debug(`Loop ${i + 1}: Retrying ${model} with ${promptKey}`);
       try {
         const body = { model, messages, stream: !!streamCallback };
         body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
@@ -695,30 +762,33 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       }
     }
   }
-  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected) {
-    let stop = false;
+  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
+    let stop = false, jsonResponse;
     const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
+    const incrementalContents = [];
     for (const jsonString of responses) {
       if (jsonString.includes("[DONE]")) {
         stop = true;
         break;
       }
-      const jsonStart = jsonString.indexOf("{");
-      const json = JSON.parse(jsonString.substring(jsonStart).trim());
-      const content = json?.choices?.[0]?.delta?.content;
-      if (content) {
-        receivedContent += content;
-        app.alert(receivedContent, {
-          actions: [{ icon: "pending", label: "Generating response" }],
-          preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
-          scrollToEnd: true
-        });
-      } else {
-        stop = !!json?.finish_reason?.length || !!json?.choices?.[0]?.finish_reason?.length;
-        break;
+      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
+      if (jsonResponse) {
+        const content = jsonResponse.choices?.[0]?.delta?.content;
+        if (content) {
+          incrementalContents.push(content);
+          receivedContent += content;
+          app.alert(receivedContent, {
+            actions: [{ icon: "pending", label: "Generating response" }],
+            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+            scrollToEnd: true
+          });
+        } else {
+          stop = !!jsonResponse?.finish_reason?.length || !!jsonResponse?.choices?.[0]?.finish_reason?.length;
+          break;
+        }
       }
     }
-    return { abort: stop, receivedContent };
+    return { abort: stop, failedParseContent, incrementalContents, receivedContent };
   }
 
   // lib/prompts.js
