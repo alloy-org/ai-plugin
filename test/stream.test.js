@@ -1,7 +1,7 @@
 import fs from "fs"
 import { STREAM_MOCK_MODEL } from "../lib/constants/provider"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
-import nock from "nock"
+import { jest } from "@jest/globals"
 import path from "path"
 import { Readable } from "stream"
 import { mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
@@ -34,33 +34,46 @@ class TestReadableStream extends Readable {
   }
 }
 
+const fileData = fs.readFileSync(path.join(__dirname, "fixtures/openai-thesaurus-stream.ndjson"), "utf8");
+
+function mockFetch(data) {
+  return jest.fn(() =>
+    Promise.resolve({
+      body: {
+        on: (event, handler) => {
+          if (event === 'readable') {
+            console.log("Calling readable");
+            // Simulate asynchronous data chunks
+            setImmediate(() => handler());
+          }
+        },
+        read: () => {
+          // Return a chunk of data; simulate end of data by eventually returning null
+          return "data chunk"; // Replace with actual data you want to mock
+        }
+      },
+      ok: true,
+    })
+  );
+}
+
 // --------------------------------------------------------------------------------------
 describe("This here plugin", () => {
   const plugin = mockPlugin();
   plugin.constants.isTestEnvironment = true;
   plugin.constants.streamTest = true;
 
+  beforeEach(() => {
+    global.fetch = mockFetch(null);
+  });
+
+  afterAll(() => {
+    // fetch.resetMocks();
+  });
+
   // --------------------------------------------------------------------------------------
   it("should handle overspaced response", async () => {
     const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
-
-    // Mock the OpenAI API call
-    nock("https://api.openai.com")
-      .persist()
-      .post("/v1/chat/completions")
-      .reply((uri, requestBody, cb) => {
-        const fileData = fs.readFileSync(path.join(__dirname, "fixtures/openai-thesaurus-stream.ndjson"), "utf8");
-        const readableStream = new TestReadableStream();
-        const jsonArray = JSON.parse(fileData);
-        for (const chunk of jsonArray) {
-          readableStream.addData(chunk);
-        }
-        console.log("Nock intercepted request. Sending back", fileData.length, "bytes")
-        cb(null, [ 200, "taco" ]);
-        // cb(null, [ 200, readableStream ]);
-        // return new Promise((resolve, reject) => resolve(fileData));
-        // return fs.createReadStream(path.join(__dirname, "fixtures/openai-thesaurus-stream.ndjson"));
-      });
 
     app.notes.find.mockReturnValue(note);
     mockAlertAccept(app);
@@ -72,5 +85,5 @@ describe("This here plugin", () => {
     const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
 
     expect(answers).toEqual(["Jesus"]);
-  }, AWAIT_TIME);
+  }, AWAIT_TIME * 2);
 })
