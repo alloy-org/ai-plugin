@@ -1,3 +1,4 @@
+import { DEFAULT_OPENAI_TEST_MODEL } from "../lib/constants/provider"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
 import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
@@ -58,3 +59,26 @@ describe("Mocked streaming", () => {
     expect(answers).toEqual(["jesus"]);
   }, AWAIT_TIME * 2);
 })
+
+// --------------------------------------------------------------------------------------
+describe("OpenAI streaming", () => {
+  const plugin = mockPlugin();
+  plugin.constants.isTestEnvironment = true;
+  plugin.constants.streamTest = true;
+
+  // --------------------------------------------------------------------------------------
+  it("should provide applicable thesaurus options", async () => {
+    const { app } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
+    app.setSetting(AI_MODEL_LABEL, DEFAULT_OPENAI_TEST_MODEL);
+
+    app.prompt = jest.fn();
+    app.prompt.mockResolvedValue(1);
+    mockAlertAccept(app);
+    await plugin.replaceText["Thesaurus"].run(app, "manager");
+
+    const tuple = app.prompt.mock.calls[0];
+    const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+
+    expect(["boss", "ceo", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
+  }, AWAIT_TIME);
+});

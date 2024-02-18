@@ -137,9 +137,8 @@ describe("This here plugin", () => {
 
   // --------------------------------------------------------------------------------------
   it("should provide applicable thesaurus options", async () => {
-    const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
+    const { app } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
 
-    app.notes.find.mockReturnValue(note);
     app.prompt = jest.fn();
     app.prompt.mockResolvedValue(1);
     mockAlertAccept(app);
@@ -149,7 +148,6 @@ describe("This here plugin", () => {
     const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
 
     expect(["boss", "ceo", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
-
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
