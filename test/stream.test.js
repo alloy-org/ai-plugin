@@ -1,5 +1,4 @@
 import fs from "fs"
-import { STREAM_MOCK_MODEL } from "../lib/constants/provider"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
 import path from "path"
@@ -10,22 +9,22 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const AWAIT_TIME = 20000;
-const fileData = fs.readFileSync(path.join(__dirname, "fixtures/openai-thesaurus-stream.ndjson"), "utf8");
 
-function mockFetch(data) {
+// --------------------------------------------------------------------------------------
+function mockFetchStream(streamArray) {
   let readIndex = -1;
   return jest.fn(() =>
     Promise.resolve({
       body: {
-        on: (event, handler) => {
-          if (event === 'readable') {
+        on: (eventName, handler) => {
+          if (eventName === "readable") {
             handler();
           }
         },
         read: () => {
           // Return a chunk of data; simulate end of data by eventually returning null
           readIndex += 1;
-          return fileData.split("\n")[readIndex];
+          return streamArray[readIndex];
         }
       },
       ok: true,
@@ -38,13 +37,16 @@ describe("This here plugin", () => {
   const plugin = mockPlugin();
   plugin.constants.isTestEnvironment = true;
   plugin.constants.streamTest = true;
+  const fileData = fs.readFileSync(path.join(__dirname, "fixtures/openai-thesaurus-stream.ndjson"), "utf8");
+  let fetchWas;
 
   beforeEach(() => {
-    global.fetch = mockFetch(null);
+    fetchWas = global.fetch;
+    global.fetch = mockFetchStream(fileData.split("\n"));
   });
 
   afterAll(() => {
-    // fetch.resetMocks();
+    global.fetch = fetchWas;
   });
 
   // --------------------------------------------------------------------------------------
@@ -53,13 +55,12 @@ describe("This here plugin", () => {
 
     app.notes.find.mockReturnValue(note);
     mockAlertAccept(app);
-    // app.settings[AI_MODEL_LABEL] = "gpt-4-1106-preview";
-    app.settings[AI_MODEL_LABEL] = STREAM_MOCK_MODEL;
+    app.settings[AI_MODEL_LABEL] = "gpt-4-1106-preview";
     await plugin.replaceText["Thesaurus"].run(app, "manager");
 
     const tuple = app.prompt.mock.calls[0];
     const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
 
-    expect(answers).toEqual(["Jesus"]);
+    expect(answers).toEqual(["jesus"]);
   }, AWAIT_TIME * 2);
 })
