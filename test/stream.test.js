@@ -29,35 +29,66 @@ function mockFetchStream(streamArray) {
 
 // --------------------------------------------------------------------------------------
 describe("Mocked streaming", () => {
+  let fetchWas;
   const plugin = mockPlugin();
   plugin.constants.isTestEnvironment = true;
   plugin.constants.streamTest = true;
-  const fileData = contentFromFileName("openai-thesaurus-stream.ndjson");
-  let fetchWas;
 
-  beforeEach(() => {
-    fetchWas = global.fetch;
-    global.fetch = mockFetchStream(fileData.split("\n"));
-  });
+  // --------------------------------------------------------------------------------------
+  describe("faux-thesaurus", () => {
+    const fileData = contentFromFileName("openai-thesaurus-stream.ndjson");
 
-  afterAll(() => {
-    global.fetch = fetchWas;
+    beforeEach(() => {
+      fetchWas = global.fetch;
+      global.fetch = mockFetchStream(fileData.split("\n"));
+    });
+
+    afterAll(() => {
+      global.fetch = fetchWas;
+    });
+
+    // --------------------------------------------------------------------------------------
+    it("should handle overspaced response", async () => {
+      const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
+
+      mockAlertAccept(app);
+      app.settings[AI_MODEL_LABEL] = "gpt-4-1106-preview";
+      await plugin.replaceText["Thesaurus"].run(app, "manager");
+
+      const tuple = app.prompt.mock.calls[0];
+      const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+
+      expect(answers).toEqual(["jesus"]);
+    }, AWAIT_TIME);
   });
 
   // --------------------------------------------------------------------------------------
-  it("should handle overspaced response", async () => {
-    const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
+  describe("multi-message content", () => {
+    const fileData = contentFromFileName("multi-message.json");
 
-    app.notes.find.mockReturnValue(note);
-    mockAlertAccept(app);
-    app.settings[AI_MODEL_LABEL] = "gpt-4-1106-preview";
-    await plugin.replaceText["Thesaurus"].run(app, "manager");
+    beforeEach(() => {
+      fetchWas = global.fetch;
+      global.fetch = mockFetchStream(fileData.split("\n"));
+    });
 
-    const tuple = app.prompt.mock.calls[0];
-    const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+    afterAll(() => {
+      global.fetch = fetchWas;
+    });
 
-    expect(answers).toEqual(["jesus"]);
-  }, AWAIT_TIME * 2);
+    // --------------------------------------------------------------------------------------
+    it("should handle broken-messages", async () => {
+      const { app, note } = mockAppWithContent("Once upon a time");
+
+      mockAlertAccept(app);
+      app.settings[AI_MODEL_LABEL] = DEFAULT_OPENAI_TEST_MODEL;
+      await plugin.replaceText["Thesaurus"].run(app, "manager");
+
+      const tuple = app.prompt.mock.calls[0];
+      const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+
+      expect(answers).toEqual(["bizcocho"]);
+    }, AWAIT_TIME);
+  })
 })
 
 // --------------------------------------------------------------------------------------
