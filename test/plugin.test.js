@@ -52,23 +52,21 @@ describe("This here plugin", () => {
   // --------------------------------------------------------------------------------------
   it("should allow appOption freeform Q&A", async () => {
     const content = "[This page accidentally left blank]"
-    const { app, note } = mockAppWithContent(content);
+    const { app } = mockAppWithContent(content);
 
     mockAlertAccept(app);
-    for (const aiModel of [ "mistral", DEFAULT_OPENAI_TEST_MODEL ]) {
-      app.prompt.mockImplementation(async (prompt, actions) => {
-        if (prompt.includes(APP_OPTION_VALUE_USE_PROMPT)) {
-          return "replace";
-        } else if (prompt === QUESTION_ANSWER_PROMPT) {
-          return [ "How much does a killer whale weigh compared to a human?", aiModel ]
-        } else {
-          return -1;
-        }
-      });
-      const response = await plugin.appOption["Answer"](app);
-      expect(/(ton|kg|more than)/.test(response)).toBeTruthy();
-    }
-  }, AWAIT_TIME * 2);
+    app.prompt.mockImplementation(async (prompt, actions) => {
+      if (prompt.includes(APP_OPTION_VALUE_USE_PROMPT)) {
+        return "replace";
+      } else if (prompt === QUESTION_ANSWER_PROMPT) {
+        return [ "How much does a killer whale weigh compared to a human?", DEFAULT_OPENAI_TEST_MODEL ];
+      } else {
+        return -1;
+      }
+    });
+    const response = await plugin.appOption["Answer"](app);
+    expect(/(ton|kg|more than)/.test(response)).toBeTruthy();
+  }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
   it("should allow user to continue a sentence", async () => {
@@ -91,7 +89,7 @@ describe("This here plugin", () => {
 
   // --------------------------------------------------------------------------------------
   it("should execute complete in context", async () => {
-    const content = "Write an email to retailer asking to return an item";
+    const content = "Write an email to retailer asking to return an item. Ensure that the email begins with a suggested subject line, labeled 'Subject: '.";
     const { app, note } = mockAppWithContent(content);
 
     app.notes.find.mockReturnValue(note);

@@ -1,6 +1,7 @@
 import { jest } from "@jest/globals"
 import { mockApp, mockPlugin, mockAppWithContent, mockAlertAccept } from "./test-helpers"
 import { LOOK_UP_OLLAMA_MODEL_ACTION_LABEL } from "../lib/constants/provider"
+import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { ollamaAvailableModels } from "../lib/fetch-ollama"
 import { groceryArrayFromContent } from "../lib/functions/groceries"
@@ -96,6 +97,25 @@ describe("Ollama", () => {
 
     expect(["boss", "ceo", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
 
+  }, AWAIT_TIME);
+
+  // --------------------------------------------------------------------------------------
+  it("should allow appOption freeform Q&A", async () => {
+    const content = "[This page accidentally left blank]"
+    const { app } = mockAppWithContent(content);
+
+    mockAlertAccept(app);
+    app.prompt.mockImplementation(async (prompt, actions) => {
+      if (prompt.includes(APP_OPTION_VALUE_USE_PROMPT)) {
+        return "replace";
+      } else if (prompt === QUESTION_ANSWER_PROMPT) {
+        return [ "How much does a killer whale weigh compared to a human?", "mistral" ]
+      } else {
+        return -1;
+      }
+    });
+    const response = await plugin.appOption["Answer"](app);
+    expect(/(ton|kg|more than)/.test(response)).toBeTruthy();
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
