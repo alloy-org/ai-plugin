@@ -2,7 +2,7 @@ import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TEST_MODEL, openAiTokenLimit } fro
 import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
 import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
-import { mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
+import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
 
@@ -150,7 +150,22 @@ describe("This here plugin", () => {
 
     expect(["boss", "ceo", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
 
-    }, AWAIT_TIME);
+  }, AWAIT_TIME);
+
+  // --------------------------------------------------------------------------------------
+  it("should summarize a note", async () => {
+    const fileContent = contentFromFileName("introduction_to_sally.txt");
+    const { app, note } = mockAppWithContent(fileContent);
+    let summary;
+    app.prompt.mockImplementation(async (title, object) => {
+      summary = title;
+    });
+
+    mockAlertAccept(app);
+    await plugin.noteOption["Summarize"](app, note.uuid);
+    expect(summary).toContain("Mr. Pinner");
+    expect(summary).toContain("Sally");
+  }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
   it("should truncate content when the note is too long for OpenAI", async () => {

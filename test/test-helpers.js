@@ -117,7 +117,7 @@ export function mockApp(seedNote) {
 }
 
 // --------------------------------------------------------------------------------------
-export function fileContent(fileName) {
+export function contentFromFileName(fileName) {
   const filePath = path.join(__dirname, `fixtures/${ fileName }`);
   return fs.readFileSync(filePath, "utf8");
 }

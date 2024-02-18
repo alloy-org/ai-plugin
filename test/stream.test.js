@@ -1,6 +1,6 @@
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
-import { fileContent, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
+import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
 
@@ -31,7 +31,7 @@ describe("Mocked streaming", () => {
   const plugin = mockPlugin();
   plugin.constants.isTestEnvironment = true;
   plugin.constants.streamTest = true;
-  const fileData = fileContent("openai-thesaurus-stream.ndjson");
+  const fileData = contentFromFileName("openai-thesaurus-stream.ndjson");
   let fetchWas;
 
   beforeEach(() => {
