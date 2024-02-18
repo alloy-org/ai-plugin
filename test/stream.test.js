@@ -13,7 +13,7 @@ function mockFetchStream(streamArray) {
       body: {
         on: (eventName, handler) => {
           if (eventName === "readable") {
-            handler();
+            setTimeout(handler(), 0);
           }
         },
         read: () => {
