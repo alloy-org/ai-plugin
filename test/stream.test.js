@@ -112,4 +112,26 @@ describe("OpenAI streaming", () => {
 
     expect(["boss", "ceo", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
   }, AWAIT_TIME);
+
+  // --------------------------------------------------------------------------------------
+  it("should summarize with follow up", async () => {
+    const { app, note } = mockAppWithContent("When you wish upon a star\nMakes no difference who you are\nAnything your heart desires\n" +
+      "Will come to you\nIf your heart is in your dream\nNo request is too extreme\nWhen you wish upon a star\n" +
+      "As dreamers do\nFate is kind\nShe brings to those who love\nThe sweet fulfillment of\nTheir secret longing\n" +
+      "Like a bolt out of the blue\nFate steps in and sees you through\nWhen you wish upon a star\nYour dreams come true.");
+    app.setSetting(AI_MODEL_LABEL, DEFAULT_OPENAI_TEST_MODEL);
+
+    let summary;
+    app.prompt.mockImplementation(async (title, options) => {
+      summary = title;
+      const followupOption = options.inputs[0].options.find(option => option.value === "followup");
+      if (followupOption) {
+        return followupOption.value;
+      } else {
+        console.debug("Unhandled prompt for", )
+      }
+    });
+    await plugin.noteOption["Summarize"](app, note.uuid);
+    expect(true).toBeTruthy();
+  }, AWAIT_TIME);
 });

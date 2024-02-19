@@ -15,7 +15,6 @@ const PLUGIN_INTERFACES = [ "appOption", "dailyJotOption", "imageOption", "inser
 
 // --------------------------------------------------------------------------------------
 export function mockAlertAccept(app) {
-  app.alert = jest.fn();
   app.alert.mockImplementation(async (text, options) => {
     if (!options) return null;
     return -1;
