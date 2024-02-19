@@ -136,15 +136,17 @@ describe("OpenAI streaming", () => {
       }
     });
 
+    let receivedFollowUpAnswer;
     app.alert.mockImplementation(async (text, options) => {
       if (!options) return null;
       if (options.actions?.at(0)?.label === "Generating response") {
         return -1;
       } else {
+        receivedFollowUpAnswer = options.preface && /^system:/.test(options.preface) && options.actions && options.actions[0].label.includes("follow up question");
         return -1;
       }
     });
     await plugin.noteOption["Summarize"](app, note.uuid);
-    expect(true).toBeTruthy();
+    expect(receivedFollowUpAnswer).toBeTruthy();
   }, AWAIT_TIME);
 });
