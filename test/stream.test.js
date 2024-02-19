@@ -124,11 +124,24 @@ describe("OpenAI streaming", () => {
     let summary;
     app.prompt.mockImplementation(async (title, options) => {
       summary = title;
-      const followupOption = options.inputs[0].options.find(option => option.value === "followup");
+      const firstInput = options.inputs[0];
+      const followupOption = firstInput.options ? firstInput.options.find(option => option.value === "followup") : null;
       if (followupOption) {
         return followupOption.value;
+      } else if (firstInput.label === "Message to send") {
+        const selectableOption = options.inputs.find(input => input.options);
+        return [ "My question is: why did I ask?", selectableOption.options[0].value ];
       } else {
-        console.debug("Unhandled prompt for", )
+        console.debug("Unhandled prompt for", title);
+      }
+    });
+
+    app.alert.mockImplementation(async (text, options) => {
+      if (!options) return null;
+      if (options.actions?.at(0)?.label === "Generating response") {
+        return -1;
+      } else {
+        return -1;
       }
     });
     await plugin.noteOption["Summarize"](app, note.uuid);
