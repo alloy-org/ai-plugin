@@ -792,6 +792,19 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
 
   // lib/prompts.js
+  var PROMPT_KEYS = [
+    "answer",
+    "answerSelection",
+    "complete",
+    "reviseContent",
+    "reviseText",
+    "rhyming",
+    "sortGroceriesText",
+    "sortGroceriesJson",
+    "suggestTasks",
+    "summarize",
+    "thesaurus"
+  ];
   function promptsFromPromptKey(promptKey, promptParams, contentIndex, rejectedResponses, aiModel, inputLimit = DEFAULT_CHARACTER_LIMIT) {
     let messages = [];
     messages.push({ role: "system", content: systemPromptFromPromptKey(promptKey) });
@@ -828,6 +841,8 @@ Do NOT repeat ${multiple ? "any" : "the"} rejected response, ${multiple ? "these
     thesaurus: "You are a helpful thesaurus that responds in JSON with an array of alternate word choices that fit the context provided"
   };
   function messageArrayFromPrompt(promptKey, promptParams) {
+    if (!PROMPT_KEYS.includes(promptKey))
+      throw `Please add "${promptKey}" to PROMPT_KEYS array`;
     const userPrompts = {
       answer: ({ instruction }) => [
         `Succinctly answer the following question: ${instruction}`,
@@ -1076,9 +1091,20 @@ Will be utilized after your preliminary approval`,
         const updatedRejects = rejectedResponses || [];
         updatedRejects.push(response);
         preferredModels = [preferredModel, ...preferredModels.filter((model) => model !== preferredModel)];
-        console.debug("User chose to try", preferredModel, "next so preferred models are", preferredModels);
-        const options = { confirmInsert, contentIndex, preferredModels, rejectedResponses: updatedRejects };
-        return await notePromptResponse(plugin2, app, noteUUID, promptKey, promptParams, options);
+        console.debug("User chose to try", preferredModel, "next so preferred models are", preferredModels, "Rejected responses now", updatedRejects);
+        return await notePromptResponse(
+          plugin2,
+          app,
+          noteUUID,
+          promptKey,
+          promptParams,
+          {
+            confirmInsert,
+            contentIndex,
+            preferredModels,
+            rejectedResponses: updatedRejects
+          }
+        );
       } else if (Number.isInteger(selectedValue)) {
         app.alert(`Did not recognize your selection "${selectedValue}"`);
       }
