@@ -1,6 +1,8 @@
 import { PROMPT_KEYS, promptsFromPromptKey } from "../lib/prompts"
 import { DEFAULT_OPENAI_TEST_MODEL } from "../lib/constants/provider"
-import { mockPlugin } from "./test-helpers"
+import { mockAppWithContent, mockPlugin } from "./test-helpers"
+
+const AWAIT_TIME = 20000;
 
 // --------------------------------------------------------------------------------------
 describe("This here plugin", () => {
@@ -32,4 +34,25 @@ describe("This here plugin", () => {
       expect(messages.find(m => m.content.includes(rejectedResponse))).toBeTruthy();
     }
   });
+
+  // --------------------------------------------------------------------------------------
+  it("should include rejected thesaurus options", async () => {
+    const { app } = mockAppWithContent("Once upon a time there was a very special baby");
+
+    let firstAnswer, secondAnswer;
+    app.alert.mockImplementation(async (text, options) => {
+      if (firstAnswer) {
+        secondAnswer = text;
+        return -1;
+      } else {
+        firstAnswer = text;
+        return 0; // Retry the first option, our preferred model
+      }
+    });
+    await plugin.replaceText["Thesaurus"].run(app, "baby");
+    expect(firstAnswer).toContain("* infant\n");
+    expect(firstAnswer).toContain("newborn");
+    expect(secondAnswer).not.toContain("newborn");
+    expect(secondAnswer).not.toContain("* infant\n");
+  }, AWAIT_TIME);
 });

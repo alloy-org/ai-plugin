@@ -1089,22 +1089,15 @@ Will be utilized after your preliminary approval`,
       } else if (preferredModels[selectedValue]) {
         const preferredModel = preferredModels[selectedValue];
         const updatedRejects = rejectedResponses || [];
-        updatedRejects.push(response);
+        updatedRejects.push(responseAsText);
         preferredModels = [preferredModel, ...preferredModels.filter((model) => model !== preferredModel)];
         console.debug("User chose to try", preferredModel, "next so preferred models are", preferredModels, "Rejected responses now", updatedRejects);
-        return await notePromptResponse(
-          plugin2,
-          app,
-          noteUUID,
-          promptKey,
-          promptParams,
-          {
-            confirmInsert,
-            contentIndex,
-            preferredModels,
-            rejectedResponses: updatedRejects
-          }
-        );
+        return await notePromptResponse(plugin2, app, noteUUID, promptKey, promptParams, {
+          confirmInsert,
+          contentIndex,
+          preferredModels,
+          rejectedResponses: updatedRejects
+        });
       } else if (Number.isInteger(selectedValue)) {
         app.alert(`Did not recognize your selection "${selectedValue}"`);
       }
