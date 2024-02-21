@@ -135,7 +135,7 @@ describe("Ollama", () => {
         app.setSetting(AI_MODEL_LABEL, aiModel);
         const insertedText = await plugin.insertText["Continue"](app, content);
         expect(insertedText.length).toBeGreaterThan(0);
-        expect(/(254|2[45]\s?cm)/.test(insertedText)).toBeTruthy();
+        expect(/(254|2[.45]+)\s?([mc]m|centimeter|millimeter)/.test(insertedText)).toBeTruthy();
         expect(insertedText.length).toBeLessThan(60);
         note.body = content;
         console.log("aiModel", plugin.lastModelUsed, "passes")

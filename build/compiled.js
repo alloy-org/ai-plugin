@@ -16,8 +16,10 @@
   function openAiModels() {
     return Object.keys(OPENAI_TOKEN_LIMITS);
   }
+  function isModelOllama(model) {
+    return !openAiModels().includes(model);
+  }
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
-  var DEFAULT_CHARACTER_LIMIT = 12e3;
   var DEFAULT_OPENAI_MODEL = "gpt-4-1106-preview";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
   var MIN_OPENAI_KEY_CHARACTERS = 50;
@@ -393,7 +395,6 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
           if (chunk) {
             failLoops = 0;
             const decoded = chunk.toString();
-            console.debug("Seeking to incorporate", aiModel, "decoded content", decoded, "into JSON object. Existing failedParseContent", failedParseContent, "Existing content length", content?.length);
             const responseObject = callback(app, decoded, receivedContent, aiModel, responseJsonExpected, failedParseContent);
             ({ abort, failedParseContent, incrementalContents, receivedContent } = responseObject);
             if (receivedContent)
@@ -805,10 +806,38 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     "summarize",
     "thesaurus"
   ];
-  function promptsFromPromptKey(promptKey, promptParams, contentIndex, rejectedResponses, aiModel, inputLimit = DEFAULT_CHARACTER_LIMIT) {
+  async function contentfulPromptParams(app, noteUUID, promptKey, promptKeyParams, aiModel, { contentIndex = null, contentIndexText = null, inputLimit = null } = {}) {
+    let noteContent = "", noteName = "";
+    if (!inputLimit)
+      inputLimit = isModelOllama(aiModel) ? OLLAMA_TOKEN_CHARACTER_LIMIT : openAiTokenLimit(aiModel);
+    if (noteUUID) {
+      const note = await app.notes.find(noteUUID);
+      noteContent = await note.content();
+      noteName = note.name;
+    }
+    if (!Number.isInteger(contentIndex) && contentIndexText && noteContent) {
+      contentIndex = contentIndexFromParams(contentIndexText, noteContent);
+    }
+    let boundedContent = noteContent || "";
+    const longContent = useLongContentContext(promptKey);
+    const noteContentCharacterLimit = Math.min(inputLimit * 0.5, longContent ? 5e3 : 1e3);
+    boundedContent = boundedContent.replace(/<!--\s\{[^}]+\}\s-->/g, "");
+    if (noteContent && noteContent.length > noteContentCharacterLimit) {
+      boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit);
+    }
+    const limitedLines = limitContextLines(aiModel, promptKey);
+    if (limitedLines && Number.isInteger(contentIndex)) {
+      boundedContent = relevantLinesFromContent(boundedContent, contentIndex);
+    }
+    return { ...promptKeyParams, noteContent: boundedContent, noteName };
+  }
+  function promptsFromPromptKey(promptKey, promptParams, rejectedResponses, aiModel) {
     let messages = [];
+    if (tooDumbForExample(aiModel)) {
+      promptParams = { ...promptParams, suppressExample: true };
+    }
     messages.push({ role: "system", content: systemPromptFromPromptKey(promptKey) });
-    const userPrompt = userPromptFromPromptKey(promptKey, promptParams, contentIndex, aiModel, inputLimit);
+    const userPrompt = userPromptFromPromptKey(promptKey, promptParams);
     if (Array.isArray(userPrompt)) {
       userPrompt.forEach((content) => {
         messages.push({ role: "user", content: truncate(content) });
@@ -940,34 +969,18 @@ ${noteContent}`,
     };
     return userPrompts[promptKey]({ ...promptParams });
   }
-  function userPromptFromPromptKey(promptKey, promptParams, contentIndex, aiModel, inputLimit) {
-    const { noteContent } = promptParams;
-    let boundedContent = noteContent || "";
-    const longContent = useLongContentContext(promptKey);
-    const noteContentCharacterLimit = Math.min(inputLimit * 0.5, longContent ? 5e3 : 1e3);
-    boundedContent = boundedContent.replace(/<!--\s\{[^}]+\}\s-->/g, "");
-    if (noteContent && noteContent.length > noteContentCharacterLimit) {
-      boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit);
-    }
-    const limitedLines = limitContextLines(aiModel, promptKey);
-    if (limitedLines && Number.isInteger(contentIndex)) {
-      boundedContent = relevantLinesFromContent(boundedContent, contentIndex);
-    }
+  function userPromptFromPromptKey(promptKey, promptParams) {
     let userPrompts;
     if (["continue", "insertTextComplete", "replaceTextComplete"].find((key) => key === promptKey)) {
+      const { noteContent } = promptParams;
       let tokenAndSurroundingContent;
       if (promptKey === "replaceTextComplete") {
         tokenAndSurroundingContent = promptParams.text;
       } else {
         const replaceToken = promptKey === "insertTextComplete" ? `${PLUGIN_NAME}: Complete` : `${PLUGIN_NAME}: Continue`;
-        if (!boundedContent.includes(replaceToken) && noteContent.includes(replaceToken)) {
-          contentIndex = noteContent.indexOf(replaceToken);
-          console.debug("Couldn't find", replaceToken, "in", boundedContent, "so truncating to", relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit), "given", noteContentCharacterLimit);
-          boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit);
-        }
-        console.debug("Note content", noteContent, "bounded content", boundedContent, "replace token", replaceToken, "content index", contentIndex, "with noteContentCharacterLimit", noteContentCharacterLimit);
+        console.debug("Note content", noteContent, "replace token", replaceToken);
         tokenAndSurroundingContent = `~~~
-${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
+${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
 ~~~`;
       }
       userPrompts = [
@@ -977,7 +990,7 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         `Most importantly, DO NOT respond with <replaceToken> itself and DO NOT repeat word sequences from the markdown document. BE CONCISE.`
       ];
     } else {
-      userPrompts = messageArrayFromPrompt(promptKey, { ...promptParams, noteContent: boundedContent });
+      userPrompts = messageArrayFromPrompt(promptKey, promptParams);
       if (promptParams.suppressExample && userPrompts[0]?.includes("example")) {
         try {
           const json = JSON.parse(userPrompts[0]);
@@ -1025,6 +1038,15 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     const systemPrompts = SYSTEM_PROMPTS;
     return systemPrompts[promptKey] || systemPrompts.defaultPrompt;
   }
+  function contentIndexFromParams(contentIndexText, noteContent) {
+    let contentIndex = null;
+    if (contentIndexText) {
+      contentIndex = noteContent.indexOf(contentIndexText);
+    }
+    if (contentIndex === -1)
+      contentIndex = null;
+    return contentIndex;
+  }
 
   // lib/model-picker.js
   var MAX_CANDIDATE_MODELS = 3;
@@ -1036,25 +1058,17 @@ ${boundedContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     allowResponse = null,
     contentIndexText
   } = {}) {
-    let noteContent = "", noteName = "";
-    if (noteUUID) {
-      const note = await app.notes.find(noteUUID);
-      noteContent = await note.content();
-      noteName = note.name;
-    }
     preferredModels = preferredModels || await recommendedAiModels(plugin2, app, promptKey);
     if (!preferredModels.length)
       return;
-    if (!Number.isInteger(contentIndex) && contentIndexText && noteContent) {
-      contentIndex = contentIndexFromParams(contentIndexText, noteContent);
-    }
     const startAt = /* @__PURE__ */ new Date();
     const { response, modelUsed } = await sendQuery(
       plugin2,
       app,
+      noteUUID,
       promptKey,
-      { ...promptParams, noteContent, noteName },
-      { allowResponse, contentIndex, preferredModels, rejectedResponses }
+      promptParams,
+      { allowResponse, contentIndex, contentIndexText, preferredModels, rejectedResponses }
     );
     if (response === null) {
       app.alert("Failed to receive a usable response from AI");
@@ -1132,8 +1146,9 @@ Will be utilized after your preliminary approval`,
     }
     return candidateAiModels.slice(0, MAX_CANDIDATE_MODELS);
   }
-  async function sendQuery(plugin2, app, promptKey, promptParams, {
+  async function sendQuery(plugin2, app, noteUUID, promptKey, promptParams, {
     contentIndex = null,
+    contentIndexText = null,
     preferredModels = null,
     rejectedResponses = null,
     allowResponse = null
@@ -1142,9 +1157,15 @@ Will be utilized after your preliminary approval`,
     console.debug("Starting to query", promptKey, "with preferredModels", preferredModels);
     let modelsQueried = [];
     for (const aiModel of preferredModels) {
-      const inputLimit = isModelOllama(aiModel) ? OLLAMA_TOKEN_CHARACTER_LIMIT : openAiTokenLimit(aiModel);
-      const suppressExample = tooDumbForExample(aiModel);
-      const messages = promptsFromPromptKey(promptKey, { ...promptParams, suppressExample }, contentIndex, rejectedResponses, aiModel, inputLimit);
+      const queryPromptParams = await contentfulPromptParams(
+        app,
+        noteUUID,
+        promptKey,
+        promptParams,
+        aiModel,
+        { contentIndex, contentIndexText }
+      );
+      const messages = promptsFromPromptKey(promptKey, queryPromptParams, rejectedResponses, aiModel);
       let response;
       plugin2.callCountByModel[aiModel] = (plugin2.callCountByModel[aiModel] || 0) + 1;
       plugin2.lastModelUsed = aiModel;
@@ -1190,9 +1211,6 @@ Will be utilized after your preliminary approval`,
     console.debug("Ended with", candidateAiModels);
     return candidateAiModels;
   }
-  function isModelOllama(model) {
-    return !openAiModels().includes(model);
-  }
   async function aiModelFromUserIntervention(plugin2, app, { optionSelected = null } = {}) {
     optionSelected = optionSelected || await app.prompt(NO_MODEL_FOUND_TEXT, {
       inputs: [
@@ -1229,15 +1247,6 @@ Will be utilized after your preliminary approval`,
       return null;
     }
   }
-  function contentIndexFromParams(contentIndexText, noteContent) {
-    let contentIndex = null;
-    if (contentIndexText) {
-      contentIndex = noteContent.indexOf(contentIndexText);
-    }
-    if (contentIndex === -1)
-      contentIndex = null;
-    return contentIndex;
-  }
 
   // lib/functions/chat.js
   async function initiateChat(plugin2, app, aiModels, messageHistory = []) {
@@ -1250,6 +1259,7 @@ Will be utilized after your preliminary approval`,
     const modelsQueried = [];
     while (true) {
       const conversation = promptHistory.map((chat) => `${chat.role}: ${chat.content}`).join("\n\n");
+      console.debug("Prompting user for next message to send to", plugin2.lastModelUsed || aiModels[0]);
       const [userMessage, modelToUse] = await app.prompt(conversation, {
         inputs: [
           { type: "text", label: "Message to send" },
@@ -1761,7 +1771,7 @@ ${callCountByModelText}
       },
       // --------------------------------------------------------------------------
       "Complete": async function(app, text) {
-        const { response } = await sendQuery(this, app, "replaceTextComplete", { text: `${text}<token>` });
+        const { response } = await sendQuery(this, app, app.context.noteUUID, "replaceTextComplete", { text: `${text}<token>` });
         if (response) {
           return `${text} ${response}`;
         }
@@ -1802,13 +1812,16 @@ ${callCountByModelText}
     // Private methods
     // --------------------------------------------------------------------------
     // --------------------------------------------------------------------------
-    async _noteOptionResultPrompt(app, noteUUID, promptKey, promptParams, { preferredModels = null } = {}) {
+    // Waypoint between the oft-visited notePromptResponse, and various actions that might want to insert the
+    // AI response through a variety of paths
+    // @param {object} promptKeyParams - Basic instructions from promptKey to help generate user messages
+    async _noteOptionResultPrompt(app, noteUUID, promptKey, promptKeyParams, { preferredModels = null } = {}) {
       let aiResponse = await notePromptResponse(
         this,
         app,
         noteUUID,
         promptKey,
-        promptParams,
+        promptKeyParams,
         { preferredModels, confirmInsert: false }
       );
       if (aiResponse?.length) {
@@ -1846,11 +1859,11 @@ ${trimmedResponse || aiResponse}`, {
             app.replaceNoteContent({ uuid: noteUUID }, aiResponse);
             break;
           case "followup":
-            const messages = [
-              { role: "user", content: promptParams.instruction },
-              { role: "assistant", content: trimmedResponse }
-            ];
-            return await initiateChat(this, app, preferredModels, messages);
+            const aiModel = this.lastModelUsed || (preferredModels?.length ? preferredModels[0] : null);
+            const promptParams = await contentfulPromptParams(app, noteUUID, promptKey, promptKeyParams, aiModel);
+            const systemUserMessages = promptsFromPromptKey(promptKey, promptParams, [], aiModel);
+            const messages = systemUserMessages.concat({ role: "assistant", content: trimmedResponse });
+            return await initiateChat(this, app, preferredModels?.length ? preferredModels : [aiModel], messages);
         }
         return aiResponse;
       }
