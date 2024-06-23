@@ -769,6 +769,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const incrementalContents = [];
     for (const jsonString of responses) {
       if (jsonString.includes("[DONE]")) {
+        console.debug("Received [DONE] from jsonString");
         stop = true;
         break;
       }
@@ -785,6 +786,9 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
           });
         } else {
           stop = !!jsonResponse?.finish_reason?.length || !!jsonResponse?.choices?.[0]?.finish_reason?.length;
+          if (stop) {
+            console.log("Finishing stream for reason", jsonResponse?.finish_reason || jsonResponse?.choices?.[0]?.finish_reason);
+          }
           break;
         }
       }
