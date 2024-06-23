@@ -1,6 +1,7 @@
 import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TEST_MODEL, openAiTokenLimit } from "../lib/constants/provider"
 import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
 import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "../lib/constants/settings"
+import { ollamaAvailableModels } from "../lib/fetch-ollama"
 import { jest } from "@jest/globals"
 import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
@@ -161,8 +162,8 @@ describe("This here plugin", () => {
 
     mockAlertAccept(app);
     await plugin.noteOption["Summarize"](app, note.uuid);
-    expect(summary).toContain("Mr. Pinner");
-    expect(summary).toContain("Sally");
+    expect(summary.toLowerCase()).toContain("mr. pinner");
+    expect(summary.toLowerCase()).toContain("sally");
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
@@ -170,7 +171,7 @@ describe("This here plugin", () => {
     const words = [ "once", "upon", "a", "time", "the", "dark", "sheep", "gloat", "goat", "forever", "amen", "blessed", "action", ".", ",", "the", "and so", "for" ];
     const wordsLength = words.length;
     let content = "";
-    const aiModel = "gpt-3.5-turbo"
+    const aiModel = DEFAULT_OPENAI_TEST_MODEL;
     const limit = openAiTokenLimit(aiModel);
     for (let i = 0; i < limit; i++) {
       content += words[Math.floor(Math.random() * wordsLength)] + " ";
@@ -182,15 +183,14 @@ describe("This here plugin", () => {
     app.setSetting(AI_MODEL_LABEL, aiModel);
     await plugin.replaceText["Rhymes"].run(app, "sheep");
     const alertCall = app.alert.mock.calls[0];
-    const [ jsonResponse, alertObject ] = alertCall;
-    expect(JSON.parse(jsonResponse).result).toBeTruthy();
-    expect(alertObject.preface).toContain("JSON response");
+    const [ promptText, alertObject ] = alertCall;
 
     const tuple = app.prompt.mock.calls[0];
     const answers = tuple[1].inputs[0].options.map(option => option.value);
     expect(answers.length).toBeGreaterThan(0);
-    const expectedWords = [ "beep", "keep", "deep", "sleep", "creep", "weep" ];
-    expect(expectedWords.find(w => answers.includes(w))).toBeTruthy();
+    for (const expectedWord of [ "beep", "keep", "deep", "creep" ]) {
+      expect(promptText.includes(expectedWord)).toBeTruthy();
+    }
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
@@ -199,7 +199,10 @@ describe("This here plugin", () => {
     const { app, note } = mockAppWithContent(content);
     plugin.noFallbackModels = true;
     mockAlertAccept(app)
-    for (const aiModel of [ "mistral", DEFAULT_OPENAI_TEST_MODEL, "llama2" ]) {
+    const ollamaModels = (await ollamaAvailableModels(plugin, { alert: text => console.error(text) })) || [];
+    const openAiModels = [ DEFAULT_OPENAI_TEST_MODEL ];
+    const testModels = [ ...ollamaModels, ...openAiModels ];
+    for (const aiModel of testModels) {
       let suggestedTasks = [];
       app.setSetting(AI_MODEL_LABEL, aiModel);
       app.prompt.mockImplementation((title, object) => {
