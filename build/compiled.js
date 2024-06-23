@@ -248,10 +248,14 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   }
   function extractJsonFromString(inputString) {
     let jsonText = inputString.trim();
-    const jsonStart = jsonText.indexOf("{");
-    const jsonEnd = jsonText.lastIndexOf("}");
-    if (jsonStart === -1)
-      return null;
+    let jsonStart = jsonText.indexOf("{");
+    let jsonEnd = jsonText.lastIndexOf("}");
+    if (jsonStart === -1) {
+      jsonStart = 0;
+      if (jsonEnd)
+        jsonEnd += 1;
+      jsonText = "{" + jsonText;
+    }
     jsonText = jsonText.substring(jsonStart);
     let json;
     if (jsonEnd === -1) {
