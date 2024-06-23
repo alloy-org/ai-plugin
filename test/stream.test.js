@@ -63,22 +63,6 @@ describe("Mocked streaming", () => {
   });
 
   // --------------------------------------------------------------------------------------
-  describe("real thesaurus", () => {
-    it("should stream a response", async () => {
-      const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
-
-      mockAlertAccept(app);
-      app.settings[AI_MODEL_LABEL] = "gpt-4o";
-      await plugin.replaceText["Thesaurus"].run(app, "special");
-
-      const tuple = app.prompt.mock.calls[0];
-      const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
-
-      expect(answers).toContain("unique");
-    }, AWAIT_TIME);
-  });
-
-  // --------------------------------------------------------------------------------------
   describe("multi-message content", () => {
     const fileData = contentFromFileName("multi-message.json");
 
@@ -104,7 +88,37 @@ describe("Mocked streaming", () => {
 
       expect(answers).toEqual(["bizcocho"]);
     }, AWAIT_TIME);
-  })
+  });
+
+  // --------------------------------------------------------------------------------------
+  describe("concatenated response content", () => {
+    const fileData = contentFromFileName("multi-response.json");
+
+    beforeEach(() => {
+      fetchWas = global.fetch;
+      global.fetch = mockFetchStream(fileData.split("\n"));
+    });
+
+    afterAll(() => {
+      global.fetch = fetchWas;
+    });
+
+    it("should offer responses from both, embedded as tool_call", async () => {
+      const { app, note } = mockAppWithContent("Some will question: Who ya daddy?");
+
+      mockAlertAccept(app);
+      app.settings[AI_MODEL_LABEL] = "gpt-4o";
+      await plugin.replaceText["Thesaurus"].run(app, "question");
+
+      const tuple = app.prompt.mock.calls[0];
+      const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+
+      // Array(2) [{"result": ["Inquery", "Interrogation", "Inquisiti…g ", "Probe ", "Examination ", "Investigation "]},
+      //   {"result": ["Dilemma", "Enquiry", "Grill", "Cross-examine", "Raise"]}]
+      expect(answers).toEqual(["inquery", "interrogation", "inquisition", "questioning", "probe", "examination",
+        "investigation", "dilemma", "enquiry", "grill", "cross-examine", "raise" ]);
+    }, AWAIT_TIME);
+  });
 })
 
 // --------------------------------------------------------------------------------------
@@ -127,6 +141,20 @@ describe("OpenAI streaming", () => {
     const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
 
     expect(["boss", "ceo", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
+  }, AWAIT_TIME);
+
+  // --------------------------------------------------------------------------------------
+  it("should stream a rhyming response", async () => {
+    const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born in a manger");
+
+    mockAlertAccept(app);
+    app.settings[AI_MODEL_LABEL] = "gpt-4o";
+    await plugin.replaceText["Rhymes"].run(app, "manger");
+
+    const tuple = app.prompt.mock.calls[0];
+    const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+
+    expect(answers).toContain("danger");
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
