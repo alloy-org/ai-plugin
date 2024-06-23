@@ -450,6 +450,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
             const response2 = callback(app, decodedValue, receivedContent, aiModel, responseJsonExpected, failedParseContent);
             if (response2) {
               ({ abort, failedParseContent, incrementalContents, receivedContent } = response2);
+              console.log("incrementalContent", incrementalContents, "receivedContent", receivedContent);
               if (abort)
                 break;
               if (!shouldContinueStream(incrementalContents, receivedContent))
@@ -747,6 +748,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         break;
       }
     }
+    console.debug("Response from promises is", response, "specifically response?.ok", response?.ok);
     if (response?.ok) {
       return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
     } else if (!response) {
