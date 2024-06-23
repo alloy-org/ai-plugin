@@ -214,6 +214,50 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   function cleanTextFromAnswer(answer) {
     return answer.split("\n").filter((line) => !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
   }
+  function jsonFromAiText(jsonText) {
+    let json;
+    let jsonStart = jsonText.indexOf("{");
+    if (jsonStart === -1) {
+      jsonText = `{${jsonText}`;
+      jsonStart = 0;
+    }
+    let jsonEnd = jsonText.lastIndexOf("}") + 1;
+    if (jsonEnd === 0) {
+      if (jsonText[jsonText.length - 1] === ",")
+        jsonText = jsonText.substring(0, jsonText.length - 1);
+      if (jsonText.includes("[") && !jsonText.includes("]"))
+        jsonText += "]";
+      jsonText = `${jsonText}}`;
+    } else {
+      jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+    }
+    try {
+      json = JSON.parse(jsonText);
+      return json;
+    } catch (e) {
+      console.error("Failed to parse jsonText", e);
+      jsonText = balancedJsonFromString(jsonText);
+      try {
+        json = JSON.parse(jsonText);
+        return json;
+      } catch (e2) {
+        console.error("Rebalanced jsonText still fails", e2);
+      }
+      let reformattedText = jsonText.replace(/"""/g, `"\\""`).replace(/"\n/g, `"\\n`);
+      reformattedText = reformattedText.replace(/\n\s*['“”]/g, `
+"`).replace(/['“”],\s*\n/g, `",
+`).replace(/['“”]\s*([\n\]])/, `"$1`);
+      if (reformattedText !== jsonText) {
+        try {
+          json = JSON.parse(reformattedText);
+          return json;
+        } catch (e2) {
+          console.error("Reformatted text still fails", e2);
+        }
+      }
+    }
+    return null;
+  }
 
   // lib/fetch-json.js
   var streamTimeoutSeconds = 2;
@@ -251,7 +295,6 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     let jsonText = inputString.trim();
     let jsonStart = jsonText.indexOf("{");
     if (jsonStart === -1) {
-      jsonStart = 0;
       jsonText = "{" + jsonText;
     }
     let responses;
@@ -261,42 +304,26 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     } else {
       responses = [jsonText];
     }
-    for (jsonText of responses) {
-      let json;
-      let jsonEnd = jsonText.lastIndexOf("}") + 1;
-      if (jsonEnd === 0) {
-        if (jsonText[jsonText.length - 1] === ",")
-          jsonText = jsonText.substring(0, jsonText.length - 1);
-        if (jsonText.includes("[") && !jsonText.includes("]"))
-          jsonText += "]";
-        jsonText = `${jsonText}}`;
-      } else {
-        jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
-      }
-      try {
-        json = JSON.parse(jsonText);
-        return json;
-      } catch (e) {
-        console.error("Failed to parse jsonText", e);
-        jsonText = balancedJsonFromString(jsonText);
-        try {
-          json = JSON.parse(jsonText);
-          return json;
-        } catch (e2) {
-          console.error("Rebalanced jsonText still fails", e2);
-        }
-        let reformattedText = jsonText.replace(/"""/g, `"\\""`).replace(/"\n/g, `"\\n`);
-        reformattedText = reformattedText.replace(/\n\s*['“”]/g, `
-"`).replace(/['“”],\s*\n/g, `",
-`).replace(/['“”]\s*([\n\]])/, `"$1`);
-        if (reformattedText !== jsonText) {
-          try {
-            json = JSON.parse(reformattedText);
-            return json;
-          } catch (e2) {
-            console.error("Reformatted text still fails", e2);
+    const jsonResponses = responses.map((jsonText2) => {
+      return jsonFromAiText(jsonText2);
+    });
+    const formedResponses = jsonResponses.filter((n) => n);
+    if (formedResponses.length) {
+      if (formedResponses.length > 1) {
+        const result = formedResponses[0];
+        Object.entries(result).forEach(([key, value]) => {
+          for (const altResponse of formedResponses.slice(1)) {
+            const altValue = altResponse[key];
+            if (altValue) {
+              if (Array.isArray(altValue) && Array.isArray(value)) {
+                result[key] = [.../* @__PURE__ */ new Set([...value, ...altValue])];
+              }
+            }
           }
-        }
+        });
+        return result;
+      } else {
+        return formedResponses[0];
       }
     }
     return null;
@@ -364,7 +391,6 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     try {
       jsonResponse = JSON.parse(testContent);
     } catch (e) {
-      console.debug("Failed to parse JSON from", testContent);
       if (failedParseContent) {
         try {
           jsonResponse = JSON.parse(failedParseContent + testContent);
@@ -924,8 +950,6 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
 
   // lib/openai-functions.js
   function toolsValueFromPrompt(promptKey) {
-    if (!PROMPT_KEYS.includes(promptKey))
-      throw `Please add "${promptKey}" to PROMPT_KEYS array`;
     let openaiFunction;
     switch (promptKey) {
       case "rhyming":
