@@ -20,7 +20,7 @@
     return !openAiModels().includes(model);
   }
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
-  var DEFAULT_OPENAI_MODEL = "GPT-4o";
+  var DEFAULT_OPENAI_MODEL = "gpt-4o";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
   var MIN_OPENAI_KEY_CHARACTERS = 50;
   var OLLAMA_URL = "http://localhost:11434";
