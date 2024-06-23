@@ -254,16 +254,16 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       jsonStart = 0;
       jsonText = "{" + jsonText;
     }
-    jsonText = jsonText.substring(jsonStart);
-    if (jsonText && /^\{r?e?s?ult/.test(jsonText)) {
-      const addR = /^e?s?ult/.test(jsonText);
-      const addE = addR && /^s?ult/.test(jsonText);
-      const addS = addE && /^ult/.test;
-      jsonText = `{"${addR ? "r" : ""}${addE ? "e" : ""}${addS ? "s" : ""}${jsonText.substring(1)}`;
+    const textAfterBracket = jsonText.substring(jsonStart + 1);
+    if (textAfterBracket && /^\r?e?s?ult/.test(textAfterBracket)) {
+      const addR = /^e?s?ult/.test(textAfterBracket);
+      const addE = addR && /^s?ult/.test(textAfterBracket);
+      const addS = addE && /^ult/.test(textAfterBracket);
+      jsonText = `{"${addR ? "r" : ""}${addE ? "e" : ""}${addS ? "s" : ""}${textAfterBracket}`;
     }
     let json;
     let jsonEnd = jsonText.lastIndexOf("}") + 1;
-    if (jsonEnd === -1) {
+    if (jsonEnd === 0) {
       if (jsonText[jsonText.length - 1] === ",")
         jsonText = jsonText.substring(0, jsonText.length - 1);
       if (jsonText.includes("[") && !jsonText.includes("]"))
@@ -433,7 +433,8 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const decoder = new TextDecoder();
     let abort, error, failedParseContent, incrementalContents;
     let failLoops = 0;
-    let receivedContent = "";
+    const firstBody = response.body.read();
+    let content = "";
     while (!error) {
       let value = null, done = false;
       try {
@@ -453,13 +454,16 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         break;
       } else if (value) {
         const decodedValue = decoder.decode(value, { stream: true });
+        let receivedContent = "";
         try {
           if (typeof decodedValue === "string") {
             failLoops = 0;
             const response2 = callback(app, decodedValue, receivedContent, aiModel, responseJsonExpected, failedParseContent);
             if (response2) {
               ({ abort, failedParseContent, incrementalContents, receivedContent } = response2);
-              console.log("incrementalContent", incrementalContents, "receivedContent", receivedContent);
+              console.log("incrementalContent", incrementalContents, "receivedContent", receivedContent, "content to return", content);
+              if (receivedContent)
+                content += receivedContent;
               if (abort)
                 break;
               if (!shouldContinueStream(incrementalContents, receivedContent))
@@ -480,7 +484,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         failLoops += 1;
       }
     }
-    return receivedContent;
+    return content;
   }
   function shouldContinueStream(chunkStrings, accumulatedResponse) {
     let tooMuchSpace;
@@ -657,154 +661,6 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       }
     }
     return { abort: jsonResponse.done, failedParseContent, incrementalContents, receivedContent };
-  }
-
-  // lib/openai-settings.js
-  async function apiKeyFromAppOrUser(plugin2, app) {
-    const apiKey = apiKeyFromApp(plugin2, app) || await apiKeyFromUser(plugin2, app);
-    if (!apiKey) {
-      app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
-      return null;
-    }
-    return apiKey;
-  }
-  function apiKeyFromApp(plugin2, app) {
-    if (app.settings[plugin2.constants.labelApiKey]) {
-      return app.settings[plugin2.constants.labelApiKey].trim();
-    } else if (app.settings["API Key"]) {
-      const deprecatedKey = app.settings["API Key"].trim();
-      app.setSetting(plugin2.constants.labelApiKey, deprecatedKey);
-      return deprecatedKey;
-    } else {
-      if (plugin2.constants.isTestEnvironment) {
-        throw new Error(`Couldnt find an OpenAI key in ${plugin2.constants.labelApiKey}`);
-      } else {
-        app.alert("Please configure your OpenAI key in plugin settings.");
-      }
-      return null;
-    }
-  }
-  async function apiKeyFromUser(plugin2, app) {
-    const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
-    if (apiKey) {
-      app.setSetting(plugin2.constants.labelApiKey, apiKey);
-    }
-    return apiKey;
-  }
-
-  // lib/fetch-openai.js
-  async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
-    model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
-    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, promptKey) : null;
-    try {
-      return await requestWithRetry(
-        app,
-        model,
-        messages,
-        apiKeyFromApp(plugin2, app),
-        promptKey,
-        streamCallback,
-        allowResponse,
-        { timeoutSeconds: plugin2.constants.requestTimeoutSeconds }
-      );
-    } catch (error) {
-      if (plugin2.isTestEnvironment) {
-        console.error("Failed to call OpenAI", error);
-      } else {
-        app.alert("Failed to call OpenAI: " + error);
-      }
-      return null;
-    }
-  }
-  async function requestWithRetry(app, model, messages, apiKey, promptKey, streamCallback, allowResponse, {
-    retries = 3,
-    timeoutSeconds = 30
-  } = {}) {
-    let error, response;
-    if (!apiKey?.length) {
-      app.alert("Please configure your OpenAI key in plugin settings.");
-      return null;
-    }
-    const jsonResponseExpected = isJsonPrompt(promptKey);
-    for (let i = 0; i < retries; i++) {
-      if (i > 0)
-        console.debug(`Loop ${i + 1}: Retrying ${model} with ${promptKey}`);
-      try {
-        const body = { model, messages, stream: !!streamCallback };
-        body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
-        if (jsonResponseExpected && (model.includes("gpt-4") || model.includes("gpt-3.5-turbo-1106"))) {
-          body.response_format = { type: "json_object" };
-        }
-        console.debug("Sending OpenAI", body, "query at", /* @__PURE__ */ new Date());
-        response = await Promise.race([
-          fetch("https://api.openai.com/v1/chat/completions", {
-            method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
-            body: JSON.stringify(body)
-          }),
-          new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Timeout")), timeoutSeconds * 1e3)
-          )
-        ]);
-      } catch (e) {
-        error = e;
-        console.log(`Attempt ${i + 1} failed with`, e, `at ${/* @__PURE__ */ new Date()}. Retrying...`);
-      }
-      if (response?.ok) {
-        break;
-      }
-    }
-    console.debug("Response from promises is", response, "specifically response?.ok", response?.ok);
-    if (response?.ok) {
-      return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
-    } else if (!response) {
-      app.alert("Failed to call OpenAI: " + error);
-      return null;
-    } else if (response.status === 401) {
-      app.alert("Invalid OpenAI key. Please configure your OpenAI key in plugin settings.");
-      return null;
-    } else {
-      const result = await response.json();
-      if (result && result.error) {
-        app.alert("Failed to call OpenAI: " + result.error.message);
-        return null;
-      }
-    }
-  }
-  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
-    let stop = false, jsonResponse;
-    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
-    const incrementalContents = [];
-    for (const jsonString of responses) {
-      if (jsonString.includes("[DONE]")) {
-        console.debug("Received [DONE] from jsonString");
-        stop = true;
-        break;
-      }
-      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
-      if (jsonResponse) {
-        const content = jsonResponse.choices?.[0]?.delta?.content;
-        if (content) {
-          incrementalContents.push(content);
-          receivedContent += content;
-          app.alert(receivedContent, {
-            actions: [{ icon: "pending", label: "Generating response" }],
-            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
-            scrollToEnd: true
-          });
-        } else {
-          stop = !!jsonResponse?.finish_reason?.length || !!jsonResponse?.choices?.[0]?.finish_reason?.length;
-          if (stop) {
-            console.log("Finishing stream for reason", jsonResponse?.finish_reason || jsonResponse?.choices?.[0]?.finish_reason);
-          }
-          break;
-        }
-      }
-    }
-    return { abort: stop, failedParseContent, incrementalContents, receivedContent };
   }
 
   // lib/prompts.js
@@ -1061,6 +917,185 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     if (contentIndex === -1)
       contentIndex = null;
     return contentIndex;
+  }
+
+  // lib/openai-functions.js
+  function toolsValueFromPrompt(promptKey) {
+    if (!PROMPT_KEYS.includes(promptKey))
+      throw `Please add "${promptKey}" to PROMPT_KEYS array`;
+    let result;
+    switch (promptKey) {
+      case "rhyming":
+      case "thesaurus":
+        const description = promptKey === "rhyming" ? "Array of 10 contextually relevant rhyming words" : "Array of 10 contextually relevant alternate words";
+        result = {
+          "name": `calculate_${promptKey}_array`,
+          "description": `Return the best ${promptKey} responses`,
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "result": {
+                "type": "array",
+                "description": description
+              }
+            },
+            "required": ["result"]
+          }
+        };
+    }
+    return result;
+  }
+
+  // lib/openai-settings.js
+  async function apiKeyFromAppOrUser(plugin2, app) {
+    const apiKey = apiKeyFromApp(plugin2, app) || await apiKeyFromUser(plugin2, app);
+    if (!apiKey) {
+      app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
+      return null;
+    }
+    return apiKey;
+  }
+  function apiKeyFromApp(plugin2, app) {
+    if (app.settings[plugin2.constants.labelApiKey]) {
+      return app.settings[plugin2.constants.labelApiKey].trim();
+    } else if (app.settings["API Key"]) {
+      const deprecatedKey = app.settings["API Key"].trim();
+      app.setSetting(plugin2.constants.labelApiKey, deprecatedKey);
+      return deprecatedKey;
+    } else {
+      if (plugin2.constants.isTestEnvironment) {
+        throw new Error(`Couldnt find an OpenAI key in ${plugin2.constants.labelApiKey}`);
+      } else {
+        app.alert("Please configure your OpenAI key in plugin settings.");
+      }
+      return null;
+    }
+  }
+  async function apiKeyFromUser(plugin2, app) {
+    const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
+    if (apiKey) {
+      app.setSetting(plugin2.constants.labelApiKey, apiKey);
+    }
+    return apiKey;
+  }
+
+  // lib/fetch-openai.js
+  async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
+    model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
+    const tools = toolsValueFromPrompt(promptKey);
+    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, promptKey) : null;
+    try {
+      return await requestWithRetry(
+        app,
+        model,
+        messages,
+        tools,
+        apiKeyFromApp(plugin2, app),
+        promptKey,
+        streamCallback,
+        allowResponse,
+        { timeoutSeconds: plugin2.constants.requestTimeoutSeconds }
+      );
+    } catch (error) {
+      if (plugin2.isTestEnvironment) {
+        console.error("Failed to call OpenAI", error);
+      } else {
+        app.alert("Failed to call OpenAI: " + error);
+      }
+      return null;
+    }
+  }
+  async function requestWithRetry(app, model, messages, tools, apiKey, promptKey, streamCallback, allowResponse, {
+    retries = 3,
+    timeoutSeconds = 30
+  } = {}) {
+    let error, response;
+    if (!apiKey?.length) {
+      app.alert("Please configure your OpenAI key in plugin settings.");
+      return null;
+    }
+    const jsonResponseExpected = isJsonPrompt(promptKey);
+    for (let i = 0; i < retries; i++) {
+      if (i > 0)
+        console.debug(`Loop ${i + 1}: Retrying ${model} with ${promptKey}`);
+      try {
+        const body = { model, messages, stream: !!streamCallback };
+        if (tools)
+          body.tools = tools;
+        body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
+        if (jsonResponseExpected && (model.includes("gpt-4") || model.includes("gpt-3.5-turbo-1106"))) {
+          body.response_format = { type: "json_object" };
+        }
+        console.debug("Sending OpenAI", body, "query at", /* @__PURE__ */ new Date());
+        response = await Promise.race([
+          fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+              "Authorization": `Bearer ${apiKey}`,
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify(body)
+          }),
+          new Promise(
+            (_, reject) => setTimeout(() => reject(new Error("Timeout")), timeoutSeconds * 1e3)
+          )
+        ]);
+      } catch (e) {
+        error = e;
+        console.log(`Attempt ${i + 1} failed with`, e, `at ${/* @__PURE__ */ new Date()}. Retrying...`);
+      }
+      if (response?.ok) {
+        break;
+      }
+    }
+    console.debug("Response from promises is", response, "specifically response?.ok", response?.ok);
+    if (response?.ok) {
+      return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
+    } else if (!response) {
+      app.alert("Failed to call OpenAI: " + error);
+      return null;
+    } else if (response.status === 401) {
+      app.alert("Invalid OpenAI key. Please configure your OpenAI key in plugin settings.");
+      return null;
+    } else {
+      const result = await response.json();
+      if (result && result.error) {
+        app.alert("Failed to call OpenAI: " + result.error.message);
+        return null;
+      }
+    }
+  }
+  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
+    let stop = false, jsonResponse;
+    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
+    const incrementalContents = [];
+    for (const jsonString of responses) {
+      if (jsonString.includes("[DONE]")) {
+        console.debug("Received [DONE] from jsonString");
+        stop = true;
+        break;
+      }
+      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
+      if (jsonResponse) {
+        const content = jsonResponse.choices?.[0]?.delta?.content;
+        if (content) {
+          incrementalContents.push(content);
+          receivedContent += content;
+          app.alert(receivedContent, {
+            actions: [{ icon: "pending", label: "Generating response" }],
+            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+            scrollToEnd: true
+          });
+        } else {
+          stop = !!jsonResponse?.finish_reason?.length || !!jsonResponse?.choices?.[0]?.finish_reason?.length;
+          if (stop) {
+            console.log("Finishing stream for reason", jsonResponse?.finish_reason || jsonResponse?.choices?.[0]?.finish_reason);
+          }
+          break;
+        }
+      }
+    }
+    return { abort: stop, failedParseContent, incrementalContents, receivedContent };
   }
 
   // lib/model-picker.js
