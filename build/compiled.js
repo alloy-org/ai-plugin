@@ -20,7 +20,7 @@
     return !openAiModels().includes(model);
   }
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
-  var DEFAULT_OPENAI_MODEL = "gpt-4-1106-preview";
+  var DEFAULT_OPENAI_MODEL = "GPT-4o";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
   var MIN_OPENAI_KEY_CHARACTERS = 50;
   var OLLAMA_URL = "http://localhost:11434";
@@ -37,6 +37,7 @@
     "gpt-3.5-turbo-1106": 16 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-3.5-turbo-instruct": 4 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4": 8 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-4o": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-1106-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-32k": 32 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-32k-0613": 32 * KILOBYTE * TOKEN_CHARACTERS,

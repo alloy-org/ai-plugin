@@ -52,7 +52,7 @@ describe("Mocked streaming", () => {
       const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
 
       mockAlertAccept(app);
-      app.settings[AI_MODEL_LABEL] = "gpt-4-1106-preview";
+      app.settings[AI_MODEL_LABEL] = "gpt-4o";
       await plugin.replaceText["Thesaurus"].run(app, "manager");
 
       const tuple = app.prompt.mock.calls[0];
