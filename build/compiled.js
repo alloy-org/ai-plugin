@@ -257,6 +257,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     let responses;
     if (jsonText.split("}{").length > 1) {
       responses = jsonText.split("}{").map((text) => `${text[0] === "{" ? "" : "{"}${text}${text[text.length - 1] === "}" ? "" : "}"}`);
+      console.log("Received multiple responses from AI, evaluating each of", responses);
     } else {
       responses = [jsonText];
     }
