@@ -254,35 +254,36 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       jsonStart = 0;
       jsonText = "{" + jsonText;
     }
-    const textAfterBracket = jsonText.substring(jsonStart + 1);
-    if (textAfterBracket && /^\r?e?s?ult/.test(textAfterBracket)) {
-      const addR = /^e?s?ult/.test(textAfterBracket);
-      const addE = addR && /^s?ult/.test(textAfterBracket);
-      const addS = addE && /^ult/.test(textAfterBracket);
-      jsonText = `{"${addR ? "r" : ""}${addE ? "e" : ""}${addS ? "s" : ""}${textAfterBracket}`;
-    }
-    let json;
-    let jsonEnd = jsonText.lastIndexOf("}") + 1;
-    if (jsonEnd === 0) {
-      if (jsonText[jsonText.length - 1] === ",")
-        jsonText = jsonText.substring(0, jsonText.length - 1);
-      if (jsonText.includes("[") && !jsonText.includes("]"))
-        jsonText += "]";
-      jsonText = `${jsonText}}`;
+    let responses;
+    if (jsonText.split("}{").length > 1) {
+      responses = jsonText.split("}{").map((text) => `${text[0] === "{" ? "" : "{"}${text}${text[text.length - 1] === "}" ? "" : "}"}`);
     } else {
-      jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+      responses = [jsonText];
     }
-    try {
-      json = JSON.parse(jsonText);
-    } catch (e) {
-      console.error("Failed to parse jsonText", e);
-      jsonText = balancedJsonFromString(jsonText);
+    for (jsonText of responses) {
+      let json;
+      let jsonEnd = jsonText.lastIndexOf("}") + 1;
+      if (jsonEnd === 0) {
+        if (jsonText[jsonText.length - 1] === ",")
+          jsonText = jsonText.substring(0, jsonText.length - 1);
+        if (jsonText.includes("[") && !jsonText.includes("]"))
+          jsonText += "]";
+        jsonText = `${jsonText}}`;
+      } else {
+        jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+      }
       try {
         json = JSON.parse(jsonText);
-      } catch (e2) {
-        console.error("Rebalanced jsonText still fails", e2);
-      }
-      if (!json) {
+        return json;
+      } catch (e) {
+        console.error("Failed to parse jsonText", e);
+        jsonText = balancedJsonFromString(jsonText);
+        try {
+          json = JSON.parse(jsonText);
+          return json;
+        } catch (e2) {
+          console.error("Rebalanced jsonText still fails", e2);
+        }
         let reformattedText = jsonText.replace(/"""/g, `"\\""`).replace(/"\n/g, `"\\n`);
         reformattedText = reformattedText.replace(/\n\s*['“”]/g, `
 "`).replace(/['“”],\s*\n/g, `",
@@ -290,13 +291,14 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         if (reformattedText !== jsonText) {
           try {
             json = JSON.parse(reformattedText);
+            return json;
           } catch (e2) {
             console.error("Reformatted text still fails", e2);
           }
         }
       }
     }
-    return json;
+    return null;
   }
   async function responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds = 30 } = {}) {
     const jsonResponseExpected = isJsonPrompt(promptKey);
@@ -1087,7 +1089,7 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       }
       ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
       if (jsonResponse) {
-        const content = jsonResponse.choices?.[0]?.delta?.content || jsonResponse.choices?.[0]?.delta?.tool_calls?.function?.arguments;
+        const content = jsonResponse.choices?.[0]?.delta?.content || jsonResponse.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments;
         if (content) {
           incrementalContents.push(content);
           receivedContent += content;
@@ -1100,8 +1102,8 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
           stop = !!jsonResponse?.finish_reason?.length || !!jsonResponse?.choices?.[0]?.finish_reason?.length;
           if (stop) {
             console.log("Finishing stream for reason", jsonResponse?.finish_reason || jsonResponse?.choices?.[0]?.finish_reason);
+            break;
           }
-          break;
         }
       }
     }

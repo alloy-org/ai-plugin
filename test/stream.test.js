@@ -63,6 +63,22 @@ describe("Mocked streaming", () => {
   });
 
   // --------------------------------------------------------------------------------------
+  describe("real thesaurus", () => {
+    it("should stream a response", async () => {
+      const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
+
+      mockAlertAccept(app);
+      app.settings[AI_MODEL_LABEL] = "gpt-4o";
+      await plugin.replaceText["Thesaurus"].run(app, "special");
+
+      const tuple = app.prompt.mock.calls[0];
+      const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+
+      expect(answers).toContain("unique");
+    }, AWAIT_TIME);
+  });
+
+  // --------------------------------------------------------------------------------------
   describe("multi-message content", () => {
     const fileData = contentFromFileName("multi-message.json");
 
