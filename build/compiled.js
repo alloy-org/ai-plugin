@@ -437,6 +437,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     let failLoops = 0;
     const firstBody = response.body.read();
     let content = "";
+    console.log("FirstBody is", firstBody);
     while (!error) {
       let value = null, done = false;
       try {
@@ -456,6 +457,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         break;
       } else if (value) {
         const decodedValue = decoder.decode(value, { stream: true });
+        console.log("Decoded streamWindowFetch", decodedValue, "of type", typeof decodedValue);
         let receivedContent = "";
         try {
           if (typeof decodedValue === "string") {
