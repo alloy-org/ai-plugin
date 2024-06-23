@@ -250,15 +250,19 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   function extractJsonFromString(inputString) {
     let jsonText = inputString.trim();
     let jsonStart = jsonText.indexOf("{");
-    let jsonEnd = jsonText.lastIndexOf("}");
     if (jsonStart === -1) {
       jsonStart = 0;
-      if (jsonEnd)
-        jsonEnd += 1;
       jsonText = "{" + jsonText;
     }
     jsonText = jsonText.substring(jsonStart);
+    if (jsonText && /^\{r?e?s?ult/.test(jsonText)) {
+      const addR = /^e?s?ult/.test(jsonText);
+      const addE = addR && /^s?ult/.test(jsonText);
+      const addS = addE && /^ult/.test;
+      jsonText = `{"${addR ? "r" : ""}${addE ? "e" : ""}${addS ? "s" : ""}${jsonText.substring(1)}`;
+    }
     let json;
+    let jsonEnd = jsonText.lastIndexOf("}") + 1;
     if (jsonEnd === -1) {
       if (jsonText[jsonText.length - 1] === ",")
         jsonText = jsonText.substring(0, jsonText.length - 1);

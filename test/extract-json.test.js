@@ -23,4 +23,12 @@ describe("Observed AI responses", () => {
     expect(Object.keys(result)).toContain("result");
     expect(result["result"].length).toEqual(10);
   });
+
+  it("should be parsed with missing quote", () => {
+    const openAiResponse = `result":["insignificant","minor","negligible","unimportant","inconsequential","petty","slight","meaningless","nominal,","subordinate"]}`;
+    const result = extractJsonFromString(openAiResponse);
+    expect(result).toBeTruthy();
+    expect(Object.keys(result)).toContain("result");
+    expect(result["result"].length).toEqual(10);
+  })
 });
