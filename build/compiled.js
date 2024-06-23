@@ -309,7 +309,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         await Promise.race([
           new Promise(async (resolve, _) => {
             const jsonResponse = await response.json();
-            result = jsonResponse?.choices?.at(0)?.message?.content || jsonResponse?.message?.content || jsonResponse?.response;
+            result = jsonResponse?.choices?.at(0)?.message?.content || jsonResponse?.choices?.at(0)?.message?.tool_calls?.at(0)?.function?.arguments || jsonResponse?.message?.content || jsonResponse?.response;
             resolve(result);
           }),
           new Promise(
@@ -929,17 +929,23 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       case "thesaurus":
         const description = promptKey === "rhyming" ? "Array of 10 contextually relevant rhyming words" : "Array of 10 contextually relevant alternate words";
         openaiFunction = {
-          "name": `calculate_${promptKey}_array`,
-          "description": `Return the best ${promptKey} responses`,
-          "parameters": {
-            "type": "object",
-            "properties": {
-              "result": {
-                "type": "array",
-                "description": description
-              }
-            },
-            "required": ["result"]
+          "type": "function",
+          "function": {
+            "name": `calculate_${promptKey}_array`,
+            "description": `Return the best ${promptKey} responses`,
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "array",
+                  "description": description,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["result"]
+            }
           }
         };
     }
@@ -1081,7 +1087,7 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       }
       ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
       if (jsonResponse) {
-        const content = jsonResponse.choices?.[0]?.delta?.content;
+        const content = jsonResponse.choices?.[0]?.delta?.content || jsonResponse.choices?.[0]?.delta?.tool_calls?.function?.arguments;
         if (content) {
           incrementalContents.push(content);
           receivedContent += content;
