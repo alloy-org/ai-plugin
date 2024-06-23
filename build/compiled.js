@@ -435,9 +435,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const decoder = new TextDecoder();
     let abort, error, failedParseContent, incrementalContents;
     let failLoops = 0;
-    const firstBody = response.body.read();
     let content = "";
-    console.log("FirstBody is", firstBody);
     while (!error) {
       let value = null, done = false;
       try {
