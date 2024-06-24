@@ -235,8 +235,9 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       json = JSON.parse(jsonText);
       return json;
     } catch (e) {
-      console.error("Failed to parse jsonText", e);
+      const parseTextWas = jsonText;
       jsonText = balancedJsonFromString(jsonText);
+      console.error("Failed to parse jsonText", parseTextWas, "due to", e, "Attempted rebalance yielded", jsonText);
       try {
         json = JSON.parse(jsonText);
         return json;
@@ -316,7 +317,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
             const altValue = altResponse[key];
             if (altValue) {
               if (Array.isArray(altValue) && Array.isArray(value)) {
-                result[key] = [.../* @__PURE__ */ new Set([...value, ...altValue])];
+                result[key] = [.../* @__PURE__ */ new Set([...value, ...altValue])].filter((w) => w);
               }
             }
           }
@@ -422,21 +423,18 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   async function streamIsomorphicFetch(app, response, aiModel, responseJsonExpected, callback) {
     const responseBody = response.body;
     let abort = false;
-    let content = "";
+    let receivedContent = "";
     let failedParseContent, incrementalContents;
     await new Promise((resolve, _reject) => {
       const readStream = () => {
         let failLoops = 0;
         const processChunk = () => {
-          let receivedContent = "";
           const chunk = responseBody.read();
           if (chunk) {
             failLoops = 0;
             const decoded = chunk.toString();
             const responseObject = callback(app, decoded, receivedContent, aiModel, responseJsonExpected, failedParseContent);
             ({ abort, failedParseContent, incrementalContents, receivedContent } = responseObject);
-            if (receivedContent)
-              content += receivedContent;
             if (abort || !shouldContinueStream(incrementalContents, receivedContent)) {
               resolve();
               return;
@@ -455,14 +453,14 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
       };
       responseBody.on("readable", readStream);
     });
-    return content;
+    return receivedContent;
   }
   async function streamWindowFetch(app, response, aiModel, responseJsonExpected, callback) {
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let abort, error, failedParseContent, incrementalContents;
     let failLoops = 0;
-    let content = "";
+    let receivedContent = "";
     while (!error) {
       let value = null, done = false;
       try {
@@ -482,17 +480,13 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         break;
       } else if (value) {
         const decodedValue = decoder.decode(value, { stream: true });
-        console.log("Decoded streamWindowFetch", decodedValue, "of type", typeof decodedValue);
-        let receivedContent = "";
         try {
           if (typeof decodedValue === "string") {
             failLoops = 0;
             const response2 = callback(app, decodedValue, receivedContent, aiModel, responseJsonExpected, failedParseContent);
             if (response2) {
               ({ abort, failedParseContent, incrementalContents, receivedContent } = response2);
-              console.log("incrementalContent", incrementalContents, "receivedContent", receivedContent, "content to return", content);
-              if (receivedContent)
-                content += receivedContent;
+              console.log("incrementalContent", incrementalContents, "receivedContent", receivedContent);
               if (abort)
                 break;
               if (!shouldContinueStream(incrementalContents, receivedContent))
@@ -513,7 +507,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         failLoops += 1;
       }
     }
-    return content;
+    return receivedContent;
   }
   function shouldContinueStream(chunkStrings, accumulatedResponse) {
     let tooMuchSpace;
