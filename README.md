@@ -13,7 +13,9 @@ AmpleAI Plugin is an [Amplenote plugin](https://www.amplenote.com/help/developin
 
 ## Testing
 
-Run `NODE_OPTIONS=--experimental-vm-modules npm test` to run the tests.
+Run `NODE_OPTIONS=--experimental-vm-modules npm test` to run all the tests.
+
+Or, to run a specific test file, use: `NODE_OPTIONS=--experimental-vm-modules npm test -- test/plugin.test.js`
 
 If it complains about jsdom being absent, run `npm install -D jest-environment-jsdom` and try again.
 

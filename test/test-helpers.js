@@ -1,5 +1,5 @@
 import fs from "fs"
-import { OPENAI_KEY_LABEL } from "../lib/constants/settings"
+import { PROVIDER_SETTING_KEY_LABELS } from "../lib/constants/settings"
 import dotenv from "dotenv"
 import fetch from "isomorphic-fetch"
 import { jest } from "@jest/globals"
@@ -89,7 +89,7 @@ export function mockApp(seedNote) {
     seedNote.body = content;
   });
   app.settings = {};
-  app.settings[OPENAI_KEY_LABEL] = process.env.OPEN_AI_KEY;
+  app.settings[PROVIDER_SETTING_KEY_LABELS["openai"]] = process.env.OPEN_AI_KEY;
 
   if (seedNote) {
     const noteFunction = jest.fn();

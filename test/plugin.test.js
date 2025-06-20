@@ -1,4 +1,4 @@
-import { DEFAULT_OPENAI_MODEL, DEFAULT_OPENAI_TEST_MODEL, openAiTokenLimit } from "../lib/constants/provider"
+import { defaultProviderModel, PROVIDER_DEFAULT_MODEL_IN_TEST, openAiTokenLimit } from "../lib/constants/provider"
 import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
 import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "../lib/constants/settings"
 import { ollamaAvailableModels } from "../lib/fetch-ollama"
@@ -6,6 +6,10 @@ import { jest } from "@jest/globals"
 import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
+// --------------------------------------------------------------------------------------
+function defaultTestModel(providerEm) {
+  return PROVIDER_DEFAULT_MODEL_IN_TEST[providerEm];
+}
 
 // --------------------------------------------------------------------------------------
 describe("This here plugin", () => {
@@ -23,7 +27,7 @@ describe("This here plugin", () => {
 
     app.notes.find.mockReturnValue(note);
     mockAlertAccept(app);
-    app.settings[AI_MODEL_LABEL] = DEFAULT_OPENAI_TEST_MODEL;
+    app.settings[AI_MODEL_LABEL] = defaultTestModel("openai");
     const insertedText = await plugin.insertText["Continue"](app);
 
     // Since context.replaceSelection in our test-helper will just replace the entire string with the result, we can just check the note body.
@@ -39,14 +43,14 @@ describe("This here plugin", () => {
     expect(plugin.replaceText["Answer"].check(app, "This is not a question!")).toBe(false);
     mockAlertAccept(app);
     const ollamaModel = "llama2";
-    for (const aiModel of [ ollamaModel, DEFAULT_OPENAI_TEST_MODEL ]) {
+    for (const aiModel of [ ollamaModel, defaultTestModel("openai") ]) {
       app.setSetting(AI_MODEL_LABEL, aiModel);
       console.log("What does", aiModel, "say about", content, "?");
       const replacedText = await plugin.replaceText["Answer"].run(app, content);
       expect(replacedText).toContain("egg");
     }
 
-    expect(plugin.callCountByModel[DEFAULT_OPENAI_TEST_MODEL]).toBeGreaterThanOrEqual(1);
+    expect(plugin.callCountByModel[defaultTestModel("openai")]).toBeGreaterThanOrEqual(1);
     expect(plugin.callCountByModel[ollamaModel]).toBe(1);
   }, AWAIT_TIME * 5);
 
@@ -60,7 +64,7 @@ describe("This here plugin", () => {
       if (prompt.includes(APP_OPTION_VALUE_USE_PROMPT)) {
         return "replace";
       } else if (prompt === QUESTION_ANSWER_PROMPT) {
-        return [ "How much does a killer whale weigh compared to a human?", DEFAULT_OPENAI_TEST_MODEL ];
+        return [ "How much does a killer whale weigh compared to a human?", defaultTestModel("openai") ];
       } else {
         return -1;
       }
@@ -77,7 +81,7 @@ describe("This here plugin", () => {
     mockAlertAccept(app);
     plugin.noFallbackModels = true;
     const ollamaModel = "llama2";
-    for (const aiModel of [ ollamaModel, DEFAULT_OPENAI_TEST_MODEL ]) {
+    for (const aiModel of [ ollamaModel, defaultTestModel("openai") ]) {
       app.setSetting(AI_MODEL_LABEL, aiModel);
       console.log("What does", aiModel, "say about", content, "?");
       const insertedText = await plugin.insertText["Continue"](app, content);
@@ -115,7 +119,7 @@ describe("This here plugin", () => {
 - [ ] Mackerel<!-- {"uuid":"49d6740f-0d1b-4fea-9f81-aac35627f426"} -->`;
     const { app, note } = mockAppWithContent(content);
     plugin.noFallbackModels = true;
-    app.settings[AI_MODEL_LABEL] = DEFAULT_OPENAI_MODEL;
+    app.settings[AI_MODEL_LABEL] = defaultProviderModel("openai");
 
     const bodyWas = note.body;
     expect(await plugin.noteOption["Sort Grocery List"].check(app, note.uuid)).toBeTruthy();
@@ -171,7 +175,7 @@ describe("This here plugin", () => {
     const words = [ "once", "upon", "a", "time", "the", "dark", "sheep", "gloat", "goat", "forever", "amen", "blessed", "action", ".", ",", "the", "and so", "for" ];
     const wordsLength = words.length;
     let content = "";
-    const aiModel = DEFAULT_OPENAI_TEST_MODEL;
+    const aiModel = defaultTestModel("openai");
     const limit = openAiTokenLimit(aiModel);
     for (let i = 0; i < limit; i++) {
       content += words[Math.floor(Math.random() * wordsLength)] + " ";
@@ -200,7 +204,7 @@ describe("This here plugin", () => {
     plugin.noFallbackModels = true;
     mockAlertAccept(app)
     const ollamaModels = (await ollamaAvailableModels(plugin, { alert: text => console.error(text) })) || [];
-    const openAiModels = [ DEFAULT_OPENAI_TEST_MODEL ];
+    const openAiModels = [ defaultTestModel("openai") ];
     const testModels = [ ...ollamaModels, ...openAiModels ];
     for (const aiModel of testModels) {
       let suggestedTasks = [];
@@ -225,7 +229,7 @@ describe("This here plugin", () => {
     mockAlertAccept(app)
     let suggestedTasks = [];
     let promptCount = 0;
-    app.setSetting(AI_MODEL_LABEL, DEFAULT_OPENAI_TEST_MODEL);
+    app.setSetting(AI_MODEL_LABEL, defaultTestModel("openai"));
     app.prompt.mockImplementation((title, object) => {
       promptCount += 1;
       const promptOptionValues = object.inputs[0].options.map(t => t.value);
