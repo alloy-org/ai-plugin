@@ -1,5 +1,5 @@
 import fs from "fs"
-import { PROVIDER_SETTING_KEY_LABELS } from "../lib/constants/settings"
+import { PROVIDER_SETTING_KEY_LABELS, settingKeyLabel } from "../lib/constants/settings"
 import dotenv from "dotenv"
 import fetch from "isomorphic-fetch"
 import { jest } from "@jest/globals"
@@ -13,6 +13,18 @@ const __dirname = path.dirname(__filename);
 
 const PLUGIN_INTERFACES = [ "appOption", "dailyJotOption", "imageOption", "insertText", "linkOption", "noteOption", "replaceText" ];
 export const LOCAL_MODELS_RUNNING = process.env.LOCAL_MODELS !== "suspended";
+
+// --------------------------------------------------------------------------------------
+export function aiProviderTestKey(providerEm) {
+  switch (providerEm) {
+    case "anthropic": return process.env.ANTHROPIC_API_KEY;
+    case "deepseek": return process.env.DEEPSEEK_API_KEY;
+    case "gemini": return process.env.GEMINI_API_KEY;
+    case "grok": return process.env.GROK_API_KEY;
+    case "openai": return process.env.OPENAI_API_KEY;
+    case "perplexity": return process.env.PERPLEXITY_API_KEY;
+  }
+}
 
 // --------------------------------------------------------------------------------------
 export function mockAlertAccept(app) {
@@ -90,7 +102,11 @@ export function mockApp(seedNote) {
     seedNote.body = content;
   });
   app.settings = {};
-  app.settings[PROVIDER_SETTING_KEY_LABELS["openai"]] = process.env.OPEN_AI_KEY;
+  for (const providerEm of Object.keys(PROVIDER_SETTING_KEY_LABELS)) {
+    if (aiProviderTestKey(providerEm)) {
+      app.settings[settingKeyLabel(providerEm)] = aiProviderTestKey(providerEm);
+    }
+  }
 
   if (seedNote) {
     const noteFunction = jest.fn();

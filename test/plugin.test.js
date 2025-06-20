@@ -83,7 +83,8 @@ describe("This here plugin", () => {
     mockAlertAccept(app);
     plugin.noFallbackModels = true;
     const ollamaModel = LOCAL_MODELS_RUNNING ? "llama2" : null;
-    for (const aiModel of [ ollamaModel, defaultTestModel("openai") ].filter(n => n)) {
+    const providerModels = Object.values(PROVIDER_DEFAULT_MODEL_IN_TEST);
+    for (const aiModel of [ ollamaModel, ...providerModels ].filter(n => n)) {
       app.setSetting(AI_MODEL_LABEL, aiModel);
       console.log("What does", aiModel, "say about", content, "?");
       const insertedText = await plugin.insertText["Continue"](app, content);
