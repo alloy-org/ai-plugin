@@ -12,6 +12,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const PLUGIN_INTERFACES = [ "appOption", "dailyJotOption", "imageOption", "insertText", "linkOption", "noteOption", "replaceText" ];
+export const LOCAL_MODELS_RUNNING = process.env.LOCAL_MODELS !== "suspended";
 
 // --------------------------------------------------------------------------------------
 export function mockAlertAccept(app) {

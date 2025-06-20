@@ -3,7 +3,7 @@ import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/cons
 import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "../lib/constants/settings"
 import { ollamaAvailableModels } from "../lib/fetch-ollama"
 import { jest } from "@jest/globals"
-import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
+import { contentFromFileName, LOCAL_MODELS_RUNNING, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
 // --------------------------------------------------------------------------------------
@@ -42,8 +42,8 @@ describe("This here plugin", () => {
     expect(plugin.replaceText["Answer"].check(app, content)).toBe(true);
     expect(plugin.replaceText["Answer"].check(app, "This is not a question!")).toBe(false);
     mockAlertAccept(app);
-    const ollamaModel = "llama2";
-    for (const aiModel of [ ollamaModel, defaultTestModel("openai") ]) {
+    const ollamaModel = LOCAL_MODELS_RUNNING ? "llama2" : null;
+    for (const aiModel of [ ollamaModel, defaultTestModel("openai") ].filter(n => n)) {
       app.setSetting(AI_MODEL_LABEL, aiModel);
       console.log("What does", aiModel, "say about", content, "?");
       const replacedText = await plugin.replaceText["Answer"].run(app, content);
@@ -51,7 +51,9 @@ describe("This here plugin", () => {
     }
 
     expect(plugin.callCountByModel[defaultTestModel("openai")]).toBeGreaterThanOrEqual(1);
-    expect(plugin.callCountByModel[ollamaModel]).toBe(1);
+    if (LOCAL_MODELS_RUNNING) {
+      expect(plugin.callCountByModel[ollamaModel]).toBe(1);
+    }
   }, AWAIT_TIME * 5);
 
   // --------------------------------------------------------------------------------------
@@ -80,8 +82,8 @@ describe("This here plugin", () => {
     const { app, note } = mockAppWithContent(content);
     mockAlertAccept(app);
     plugin.noFallbackModels = true;
-    const ollamaModel = "llama2";
-    for (const aiModel of [ ollamaModel, defaultTestModel("openai") ]) {
+    const ollamaModel = LOCAL_MODELS_RUNNING ? "llama2" : null;
+    for (const aiModel of [ ollamaModel, defaultTestModel("openai") ].filter(n => n)) {
       app.setSetting(AI_MODEL_LABEL, aiModel);
       console.log("What does", aiModel, "say about", content, "?");
       const insertedText = await plugin.insertText["Continue"](app, content);
@@ -203,9 +205,9 @@ describe("This here plugin", () => {
     const { app, note } = mockAppWithContent(content);
     plugin.noFallbackModels = true;
     mockAlertAccept(app)
-    const ollamaModels = (await ollamaAvailableModels(plugin, { alert: text => console.error(text) })) || [];
+    const ollamaModels = (LOCAL_MODELS_RUNNING && await ollamaAvailableModels(plugin, { alert: text => console.error(text) })) || [];
     const openAiModels = [ defaultTestModel("openai") ];
-    const testModels = [ ...ollamaModels, ...openAiModels ];
+    const testModels = [ ...ollamaModels, ...openAiModels ].filter(n => n);
     for (const aiModel of testModels) {
       let suggestedTasks = [];
       app.setSetting(AI_MODEL_LABEL, aiModel);
