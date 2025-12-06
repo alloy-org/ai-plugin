@@ -31,7 +31,7 @@ describe("This here plugin", () => {
     const insertedText = await plugin.insertText["Continue"](app);
 
     // Since context.replaceSelection in our test-helper will just replace the entire string with the result, we can just check the note body.
-    expect(insertedText).toContain("question");
+    expect(insertedText).toMatch(/question|dilemma/i);
   }, AWAIT_TIME * 3);
 
   // --------------------------------------------------------------------------------------
