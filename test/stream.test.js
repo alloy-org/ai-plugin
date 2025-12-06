@@ -160,6 +160,7 @@ describe("OpenAI streaming", () => {
   // --------------------------------------------------------------------------------------
   it("should summarize with follow up", async () => {
     const aiProviderEms = providersWithApiKey();
+    plugin.noFallbackModels = true;
     for (const providerEm of aiProviderEms) {
       const { app, note } = mockAppWithContent("When you wish upon a star\nMakes no difference who you are\nAnything your heart desires\n" +
         "Will come to you\nIf your heart is in your dream\nNo request is too extreme\nWhen you wish upon a star\n" +
