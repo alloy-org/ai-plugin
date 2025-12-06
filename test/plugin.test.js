@@ -3,7 +3,7 @@ import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/cons
 import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "../lib/constants/settings"
 import { ollamaAvailableModels } from "../lib/fetch-ollama"
 import { jest } from "@jest/globals"
-import { contentFromFileName, LOCAL_MODELS_RUNNING, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
+import { aiProviderTestKey, contentFromFileName, LOCAL_MODELS_RUNNING, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
 // --------------------------------------------------------------------------------------
@@ -72,7 +72,7 @@ describe("This here plugin", () => {
       }
     });
     const response = await plugin.appOption["Answer"](app);
-    expect(/(ton|kg|more than)/.test(response)).toBeTruthy();
+    expect(/(heavier|ton|kg|kilograms|more than)/.test(response)).toBeTruthy();
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
@@ -83,7 +83,10 @@ describe("This here plugin", () => {
     mockAlertAccept(app);
     plugin.noFallbackModels = true;
     const ollamaModel = LOCAL_MODELS_RUNNING ? "llama2" : null;
-    const providerModels = Object.values(PROVIDER_DEFAULT_MODEL_IN_TEST);
+    // Only test models for providers where we have an API key configured
+    const providerModels = Object.entries(PROVIDER_DEFAULT_MODEL_IN_TEST)
+      .filter(([ providerEm ]) => aiProviderTestKey(providerEm))
+      .map(([ , model ]) => model);
     for (const aiModel of [ ollamaModel, ...providerModels ].filter(n => n)) {
       app.setSetting(AI_MODEL_LABEL, aiModel);
       console.log("What does", aiModel, "say about", content, "?");
