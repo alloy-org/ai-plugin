@@ -29,7 +29,7 @@ export function aiProviderTestKey(providerEm) {
 // --------------------------------------------------------------------------------------
 // Returns an array of provider identifiers that have API keys configured in the environment
 export function providersWithApiKey() {
-  const allProviders = ["anthropic", "deepseek", "gemini", "grok", "openai", "perplexity"];
+  const allProviders = Object.keys(PROVIDER_SETTING_KEY_LABELS);
   return allProviders.filter(providerEm => aiProviderTestKey(providerEm));
 }
 

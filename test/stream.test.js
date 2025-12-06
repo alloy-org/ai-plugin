@@ -1,7 +1,7 @@
 import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "../lib/constants/provider"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
-import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
+import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin, providersWithApiKey } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
 
@@ -159,38 +159,44 @@ describe("OpenAI streaming", () => {
 
   // --------------------------------------------------------------------------------------
   it("should summarize with follow up", async () => {
-    const { app, note } = mockAppWithContent("When you wish upon a star\nMakes no difference who you are\nAnything your heart desires\n" +
-      "Will come to you\nIf your heart is in your dream\nNo request is too extreme\nWhen you wish upon a star\n" +
-      "As dreamers do\nFate is kind\nShe brings to those who love\nThe sweet fulfillment of\nTheir secret longing\n" +
-      "Like a bolt out of the blue\nFate steps in and sees you through\nWhen you wish upon a star\nYour dreams come true.");
-    app.setSetting(AI_MODEL_LABEL, PROVIDER_DEFAULT_MODEL_IN_TEST["openai"]);
+    const aiProviderEms = providersWithApiKey();
+    for (const providerEm of aiProviderEms) {
+      const { app, note } = mockAppWithContent("When you wish upon a star\nMakes no difference who you are\nAnything your heart desires\n" +
+        "Will come to you\nIf your heart is in your dream\nNo request is too extreme\nWhen you wish upon a star\n" +
+        "As dreamers do\nFate is kind\nShe brings to those who love\nThe sweet fulfillment of\nTheir secret longing\n" +
+        "Like a bolt out of the blue\nFate steps in and sees you through\nWhen you wish upon a star\nYour dreams come true.");
 
-    let summary;
-    app.prompt.mockImplementation(async (title, options) => {
-      summary = title;
-      const firstInput = options.inputs[0];
-      const followupOption = firstInput.options ? firstInput.options.find(option => option.value === "followup") : null;
-      if (followupOption) {
-        return followupOption.value;
-      } else if (firstInput.label === "Message to send") {
-        const selectableOption = options.inputs.find(input => input.options);
-        return [ "My question is: why did I ask?", selectableOption.options[0].value ];
-      } else {
-        console.debug("Unhandled prompt for", title);
-      }
-    });
+      app.setSetting(AI_MODEL_LABEL, PROVIDER_DEFAULT_MODEL_IN_TEST[providerEm]);
+      console.log(`Testing streaming with "${ providerEm }"`)
 
-    let receivedFollowUpAnswer;
-    app.alert.mockImplementation(async (text, options) => {
-      if (!options) return null;
-      if (options.actions?.at(0)?.label === "Generating response") {
-        return -1;
-      } else {
-        receivedFollowUpAnswer = options.preface && /^system:/.test(options.preface) && options.actions && options.actions[0].label.includes("follow up question");
-        return -1;
-      }
-    });
-    await plugin.noteOption["Summarize"](app, note.uuid);
-    expect(receivedFollowUpAnswer).toBeTruthy();
-  }, AWAIT_TIME);
+      let summary;
+      app.prompt.mockImplementation(async (title, options) => {
+        summary = title;
+        const firstInput = options.inputs[0];
+        const followupOption = firstInput.options ? firstInput.options.find(option => option.value === "followup") : null;
+        if (followupOption) {
+          return followupOption.value;
+        } else if (firstInput.label === "Message to send") {
+          const selectableOption = options.inputs.find(input => input.options);
+          return ["My question is: why did I ask?", selectableOption.options[0].value];
+        } else {
+          console.debug("Unhandled prompt for", title);
+        }
+      });
+
+      let receivedFollowUpAnswer;
+      app.alert.mockImplementation(async (text, options) => {
+        if (!options) return null;
+        if (options.actions?.at(0)?.label === "Generating response") {
+          return -1;
+        } else {
+          receivedFollowUpAnswer = options.preface && /^system:/.test(options.preface) && options.actions && options.actions[0].label.includes("follow up question");
+          return -1;
+        }
+      });
+      await plugin.noteOption["Summarize"](app, note.uuid);
+      expect(receivedFollowUpAnswer).toBeTruthy();
+      console.log(`Successfully received streamed answer "${ receivedFollowUpAnswer }" from "${ providerEm }"`);
+    }
+  }, AWAIT_TIME * Object.keys(PROVIDER_DEFAULT_MODEL_IN_TEST).length);
 });
