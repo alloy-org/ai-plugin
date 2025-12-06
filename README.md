@@ -19,6 +19,16 @@ Or, to run a specific test file, use: `NODE_OPTIONS=--experimental-vm-modules np
 
 If it complains about jsdom being absent, run `npm install -D jest-environment-jsdom` and try again.
 
+### Skipping Local LLM Tests
+
+If you don't have Ollama running locally, you can skip the local LLM tests (which test Mistral and other Ollama models) by setting the `LOCAL_MODELS` environment variable to `suspended`:
+
+```bash
+LOCAL_MODELS=suspended NODE_OPTIONS=--experimental-vm-modules npm test
+```
+
+This will prevent test failures from local model tests when Ollama is not running.
+
 ### Testing with JetBrains
 
 https://public.amplenote.com/F4rghypGZSXEjjFLiXQTxxcR

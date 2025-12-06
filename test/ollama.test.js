@@ -1,5 +1,5 @@
 import { jest } from "@jest/globals"
-import { mockApp, mockPlugin, mockAppWithContent, mockAlertAccept } from "./test-helpers"
+import { mockApp, mockPlugin, mockAppWithContent, mockAlertAccept, LOCAL_MODELS_RUNNING } from "./test-helpers"
 import { LOOK_UP_OLLAMA_MODEL_ACTION_LABEL } from "../lib/constants/provider"
 import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
@@ -9,7 +9,8 @@ import { groceryArrayFromContent } from "../lib/functions/groceries"
 const AWAIT_TIME = 20000;
 
 // --------------------------------------------------------------------------------------
-describe("Ollama", () => {
+const describeOrSkip = LOCAL_MODELS_RUNNING ? describe : describe.skip;
+describeOrSkip("Ollama", () => {
   const plugin = mockPlugin();
   plugin.constants.isTestEnvironment = true;
   plugin.noFallbackModels = true;
