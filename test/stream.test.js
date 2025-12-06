@@ -1,4 +1,4 @@
-import { DEFAULT_OPENAI_TEST_MODEL } from "../lib/constants/provider"
+import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "../lib/constants/provider"
 import { AI_MODEL_LABEL } from "../lib/constants/settings"
 import { jest } from "@jest/globals"
 import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin } from "./test-helpers"
@@ -80,7 +80,7 @@ describe("Mocked streaming", () => {
       const { app, note } = mockAppWithContent("Once upon a time");
 
       mockAlertAccept(app);
-      app.settings[AI_MODEL_LABEL] = DEFAULT_OPENAI_TEST_MODEL;
+      app.settings[AI_MODEL_LABEL] = PROVIDER_DEFAULT_MODEL_IN_TEST["openai"];
       await plugin.replaceText["Thesaurus"].run(app, "manager");
 
       const tuple = app.prompt.mock.calls[0];
@@ -130,7 +130,7 @@ describe("OpenAI streaming", () => {
   // --------------------------------------------------------------------------------------
   it("should provide applicable thesaurus options", async () => {
     const { app } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
-    app.setSetting(AI_MODEL_LABEL, DEFAULT_OPENAI_TEST_MODEL);
+    app.setSetting(AI_MODEL_LABEL, PROVIDER_DEFAULT_MODEL_IN_TEST["openai"]);
 
     app.prompt = jest.fn();
     app.prompt.mockResolvedValue(1);
@@ -163,7 +163,7 @@ describe("OpenAI streaming", () => {
       "Will come to you\nIf your heart is in your dream\nNo request is too extreme\nWhen you wish upon a star\n" +
       "As dreamers do\nFate is kind\nShe brings to those who love\nThe sweet fulfillment of\nTheir secret longing\n" +
       "Like a bolt out of the blue\nFate steps in and sees you through\nWhen you wish upon a star\nYour dreams come true.");
-    app.setSetting(AI_MODEL_LABEL, DEFAULT_OPENAI_TEST_MODEL);
+    app.setSetting(AI_MODEL_LABEL, PROVIDER_DEFAULT_MODEL_IN_TEST["openai"]);
 
     let summary;
     app.prompt.mockImplementation(async (title, options) => {

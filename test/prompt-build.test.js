@@ -1,5 +1,5 @@
 import { PROMPT_KEYS, promptsFromPromptKey } from "../lib/prompts"
-import { DEFAULT_OPENAI_TEST_MODEL } from "../lib/constants/provider"
+import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "../lib/constants/provider"
 import { mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
@@ -15,9 +15,10 @@ describe("This here plugin", () => {
     - [ ] Or so you think<!-- {\"uuid\":\"afc94f1f-942b-4dd4-b960-d205f6e4bc4c\"} -->
     - [ ] We think<!-- {"uuid":"afc94f1f-942b-4dd4-b960-d205f6e4bc4c"} -->}`;
 
+    const providerModel = PROVIDER_DEFAULT_MODEL_IN_TEST["openai"];
     for (const promptKey of ["summarize", "thesaurus", "complete"]) {
       console.debug("Expecting", promptKey, "submitted content not to contain the task UUID");
-      const messages = promptsFromPromptKey(promptKey, { noteContent }, 0, [], DEFAULT_OPENAI_TEST_MODEL);
+      const messages = promptsFromPromptKey(promptKey, { noteContent }, 0, [], providerModel);
       for (const message of messages) {
         expect(message.content).not.toContain("afc94f1f"); // Ensure the task UUID has been stripped before submitting to internets
       }
@@ -26,11 +27,12 @@ describe("This here plugin", () => {
 
   // --------------------------------------------------------------------------------------
   it("should include rejected responses in subsequent submissions", () => {
+    const providerModel = PROVIDER_DEFAULT_MODEL_IN_TEST["openai"];
     for (const promptKey of PROMPT_KEYS) {
       console.debug("Expecting", promptKey, "submitted content to contain the rejected message");
       const rejectedResponse = "Yo mamma"; // cool but rude
-      const promptParams = { groceryArray: [], instruction: "Work gud", noteContent: "It goes like dis", text: "Blah" };
-      const messages = promptsFromPromptKey(promptKey, promptParams,0, [ rejectedResponse ], DEFAULT_OPENAI_TEST_MODEL);
+      const promptParams = {groceryArray: [], instruction: "Work gud", noteContent: "It goes like dis", text: "Blah"};
+      const messages = promptsFromPromptKey(promptKey, promptParams, 0, [rejectedResponse], providerModel);
       expect(messages.find(m => m.content.includes(rejectedResponse))).toBeTruthy();
     }
   });
