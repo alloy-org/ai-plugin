@@ -148,14 +148,19 @@ describe("OpenAI streaming", () => {
     const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born in a manger");
 
     mockAlertAccept(app);
-    app.settings[AI_MODEL_LABEL] = "gpt-4o";
-    await plugin.replaceText["Rhymes"].run(app, "manger");
+    const aiProviderEms = providersWithApiKey();
+    plugin.noFallbackModels = true;
+    for (const providerEm of aiProviderEms) {
+      app.settings[AI_MODEL_LABEL] = PROVIDER_DEFAULT_MODEL_IN_TEST[providerEm];
+      await plugin.replaceText["Rhymes"].run(app, "manger");
 
-    const tuple = app.prompt.mock.calls[0];
-    const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
+      const tuple = app.prompt.mock.calls[0];
+      const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
 
-    expect(answers).toContain("danger");
-  }, AWAIT_TIME);
+      expect(answers).toContain("danger");
+      console.log(`Successfully received streamed answer "${ answers }" from "${ providerEm }"`);
+    }
+  }, AWAIT_TIME * Object.keys(PROVIDER_DEFAULT_MODEL_IN_TEST).length);
 
   // --------------------------------------------------------------------------------------
   it("should summarize with follow up", async () => {
