@@ -10,6 +10,9 @@
   var TOKEN_CHARACTERS = 4;
 
   // lib/constants/provider.js
+  function defaultProviderModel(providerEm) {
+    return PROVIDER_DEFAULT_MODEL[providerEm];
+  }
   function openAiTokenLimit(model) {
     return OPENAI_TOKEN_LIMITS[model];
   }
@@ -20,7 +23,6 @@
     return !openAiModels().includes(model);
   }
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
-  var DEFAULT_OPENAI_MODEL = "gpt-4o";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
   var MIN_OPENAI_KEY_CHARACTERS = 50;
   var OLLAMA_URL = "http://localhost:11434";
@@ -30,6 +32,47 @@
     "openhermes2.5-mistral",
     "llama2"
   ];
+  var PROVIDER_DEFAULT_MODEL = {
+    anthropic: "claude-sonnet-4-0",
+    deepseek: "deepseek-chat",
+    gemini: "gemini-2.5-flash",
+    grok: "grok-3-beta",
+    openai: "gpt-4o",
+    perplexity: "sonar-pro"
+  };
+  var PROVIDER_ENDPOINTS = {
+    anthropic: "https://api.anthropic.com/v1/messages",
+    deepseek: "https://api.deepseek.com/v1/chat/completions",
+    gemini: "https://generativelanguage.googleapis.com/v1beta/models/{model-name}:generateContent",
+    grok: "https://api.x.ai/v1/chat/completions",
+    openai: "https://api.openai.com/v1/chat/completions",
+    // https://platform.openai.com/docs/api-reference/chat/create
+    perplexity: "https://api.perplexity.ai/chat/completions"
+  };
+  var ANTHROPIC_TOKEN_LIMITS = {
+    "claude-opus-4-0": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-sonnet-4-0": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-3-7-sonnet-latest": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-3-5-sonnet-latest": 128 * KILOBYTE * TOKEN_CHARACTERS
+  };
+  var DEEPSEEK_TOKEN_LIMITS = {
+    "deepseek-chat": 64 * KILOBYTE * TOKEN_CHARACTERS,
+    "deepseek-reasoner": 64 * KILOBYTE * TOKEN_CHARACTERS,
+    "deepseek-r1-0528": 64 * KILOBYTE * TOKEN_CHARACTERS
+  };
+  var GEMINI_TOKEN_LIMITS = {
+    "gemini-2.5-pro": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-2.5-flash": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-2.5-flash-lite-preview-06-17": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-2.0-flash": 512 * KILOBYTE * TOKEN_CHARACTERS
+  };
+  var GROK_TOKEN_LIMITS = {
+    "grok-3-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-3-mini-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-2-vision-1212": 8 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-2-image-1212": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-2-1212": 128 * KILOBYTE * TOKEN_CHARACTERS
+  };
   var OPENAI_TOKEN_LIMITS = {
     "gpt-3.5": 4 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-3.5-turbo": 4 * KILOBYTE * TOKEN_CHARACTERS,
@@ -37,11 +80,24 @@
     "gpt-3.5-turbo-1106": 16 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-3.5-turbo-instruct": 4 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4": 8 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-4.1": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-4.1-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4o": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-1106-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-32k": 32 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-32k-0613": 32 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-vision-preview": 128 * KILOBYTE * TOKEN_CHARACTERS
+    "gpt-4-vision-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "o3": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "o3-mini": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "o3-pro": 512 * KILOBYTE * TOKEN_CHARACTERS,
+    "o4-mini": 512 * KILOBYTE * TOKEN_CHARACTERS
+  };
+  var PERPLEXITY_TOKEN_LIMITS = {
+    "sonar-pro": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "sonar": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "sonar-reasoning-pro": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "sonar-reasoning": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "sonar-deep-research": 128 * KILOBYTE * TOKEN_CHARACTERS
   };
 
   // lib/constants/prompt-strings.js
@@ -57,7 +113,7 @@ For casual-to-intermediate users, we recommend using OpenAI, since it offers hig
 4. Ensure that Ollama isn't already running, then start it in the console using "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"
 You can test whether Ollama is running by invoking Quick Open and running the "${LOOK_UP_OLLAMA_MODEL_ACTION_LABEL}" action`;
   var OPENAI_API_KEY_URL = "https://platform.openai.com/account/api-keys";
-  var OPENAI_API_KEY_TEXT = `Paste your OpenAI API key in the field below.
+  var OPENAI_API_KEY_TEXT = `Paste your LLM API key in the field below.
 
 Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   var OPENAI_INVALID_KEY_TEXT = `That doesn't seem to be a valid OpenAI API key. Possible next steps:
@@ -68,14 +124,25 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
   var QUESTION_ANSWER_PROMPT = "What would you like to know?";
 
   // lib/constants/settings.js
-  var AI_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
+  function settingKeyLabel(providerEm) {
+    return PROVIDER_SETTING_KEY_LABELS[providerEm];
+  }
+  var AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
+  var AI_MODEL_LABEL = "Preferred AI models (e.g., 'gpt-4o, claude-4-sonnet, grok-3-beta')";
   var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
   var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
   var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
   var MAX_SPACES_ABORT_RESPONSE = 30;
   var SUGGEST_TASKS_LABEL = "Suggest tasks";
   var PLUGIN_NAME = "AmpleAI";
-  var OPENAI_KEY_LABEL = "OpenAI API Key";
+  var PROVIDER_SETTING_KEY_LABELS = {
+    anthropic: "Anthropic API Key",
+    deepseek: "DeepSeek API Key",
+    gemini: "Gemini API Key",
+    grok: "Grok API Key",
+    openai: "OpenAI API Key",
+    perplexity: "Perplexity API Key"
+  };
 
   // lib/prompt-api-params.js
   function isJsonPrompt(promptKey) {
@@ -977,42 +1044,43 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     }
   }
 
-  // lib/openai-settings.js
-  async function apiKeyFromAppOrUser(plugin2, app) {
-    const apiKey = apiKeyFromApp(plugin2, app) || await apiKeyFromUser(plugin2, app);
+  // lib/ai-provider-settings.js
+  async function apiKeyFromAppOrUser(plugin2, app, providerEm) {
+    const apiKey = apiKeyFromApp(plugin2, app, providerEm) || await apiKeyFromUser(plugin2, app, providerEm);
     if (!apiKey) {
       app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
       return null;
     }
     return apiKey;
   }
-  function apiKeyFromApp(plugin2, app) {
-    if (app.settings[plugin2.constants.labelApiKey]) {
-      return app.settings[plugin2.constants.labelApiKey].trim();
-    } else if (app.settings["API Key"]) {
-      const deprecatedKey = app.settings["API Key"].trim();
-      app.setSetting(plugin2.constants.labelApiKey, deprecatedKey);
+  function apiKeyFromApp(plugin2, app, providerEm) {
+    const providerKeyLabel = settingKeyLabel(providerEm);
+    if (app.settings[providerKeyLabel]) {
+      return app.settings[providerKeyLabel].trim();
+    } else if (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]) {
+      const deprecatedKey = (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]).trim();
+      app.setSetting(settingKeyLabel("openai"), deprecatedKey);
       return deprecatedKey;
     } else {
       if (plugin2.constants.isTestEnvironment) {
-        throw new Error(`Couldnt find an OpenAI key in ${plugin2.constants.labelApiKey}`);
+        throw new Error(`Couldnt find a ${providerEm} key in ${app.settings}`);
       } else {
         app.alert("Please configure your OpenAI key in plugin settings.");
       }
       return null;
     }
   }
-  async function apiKeyFromUser(plugin2, app) {
+  async function apiKeyFromUser(plugin2, app, providerEm) {
     const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
     if (apiKey) {
-      app.setSetting(plugin2.constants.labelApiKey, apiKey);
+      app.setSetting(settingKeyLabel(providerEm), apiKey);
     }
     return apiKey;
   }
 
-  // lib/fetch-openai.js
+  // lib/fetch-ai-provider.js
   async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
-    model = model?.trim()?.length ? model : DEFAULT_OPENAI_MODEL;
+    model = model?.trim()?.length ? model : defaultProviderModel("openai");
     const tools = toolsValueFromPrompt(promptKey);
     const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, promptKey) : null;
     try {
@@ -1020,8 +1088,9 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         app,
         model,
         messages,
+        "openai",
         tools,
-        apiKeyFromApp(plugin2, app),
+        apiKeyFromApp(plugin2, app, "openai"),
         promptKey,
         streamCallback,
         allowResponse,
@@ -1036,7 +1105,7 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       return null;
     }
   }
-  async function requestWithRetry(app, model, messages, tools, apiKey, promptKey, streamCallback, allowResponse, {
+  async function requestWithRetry(app, model, messages, providerEm, tools, apiKey, promptKey, streamCallback, allowResponse, {
     retries = 3,
     timeoutSeconds = 30
   } = {}) {
@@ -1057,9 +1126,9 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         if (jsonResponseExpected && (model.includes("gpt-4") || model.includes("gpt-3.5-turbo-1106"))) {
           body.response_format = { type: "json_object" };
         }
-        console.debug("Sending OpenAI", body, "query at", /* @__PURE__ */ new Date());
+        console.debug(`Sending ${providerEm} body ${body} at ${/* @__PURE__ */ new Date()}`);
         response = await Promise.race([
-          fetch("https://api.openai.com/v1/chat/completions", {
+          fetch(PROVIDER_ENDPOINTS[providerEm], {
             method: "POST",
             headers: {
               "Authorization": `Bearer ${apiKey}`,
@@ -1211,7 +1280,7 @@ Will be utilized after your preliminary approval`,
       candidateAiModels.push(plugin2.lastModelUsed);
     }
     if (!plugin2.noFallbackModels) {
-      const ollamaModels = plugin2.ollamaModelsFound || await ollamaAvailableModels(plugin2, app);
+      const ollamaModels = plugin2.ollamaModelsFound || !plugin2.noLocalModels && await ollamaAvailableModels(plugin2, app);
       if (ollamaModels && !plugin2.ollamaModelsFound) {
         plugin2.ollamaModelsFound = ollamaModels;
       }
@@ -1263,7 +1332,7 @@ Will be utilized after your preliminary approval`,
         console.error("Failed to make call with", aiModel, "response", response, "while messages are", messages, "Error counts", plugin2.errorCountByModel);
       }
     }
-    if (modelsQueried.length && modelsQueried.find((m) => isModelOllama(m))) {
+    if (modelsQueried.length && modelsQueried.find((m) => isModelOllama(m)) && !plugin2.noLocalModels) {
       const availableModels = await ollamaAvailableModels(plugin2, app);
       plugin2.ollamaModelsFound = availableModels;
       console.debug("Found availableModels", availableModels, "after receiving no results in sendQuery. plugin.ollamaModelsFound is now", plugin2.ollamaModelsFound);
@@ -1279,12 +1348,12 @@ Will be utilized after your preliminary approval`,
     }
   }
   function includingFallbackModels(plugin2, app, candidateAiModels) {
-    if (app.settings[OPENAI_KEY_LABEL]?.length && !candidateAiModels.find((m) => m === DEFAULT_OPENAI_MODEL)) {
-      candidateAiModels = candidateAiModels.concat(DEFAULT_OPENAI_MODEL);
-    } else if (!app.settings[OPENAI_KEY_LABEL]?.length) {
-      console.error("No OpenAI key found in", OPENAI_KEY_LABEL, "setting");
-    } else if (candidateAiModels.find((m) => m === DEFAULT_OPENAI_MODEL)) {
-      console.debug("Already an OpenAI model among candidates,", candidateAiModels.find((m) => m === DEFAULT_OPENAI_MODEL));
+    for (const providerEm of Object.keys(PROVIDER_SETTING_KEY_LABELS)) {
+      const providerSettingLabel = PROVIDER_SETTING_KEY_LABELS[providerEm];
+      if (app.settings[providerSettingLabel]?.length && !candidateAiModels.find((m) => m === PROVIDER_DEFAULT_MODEL[providerEm])) {
+        candidateAiModels.push(PROVIDER_DEFAULT_MODEL[providerEm]);
+        console.debug(`Added ${providerSettingLabel} model ${PROVIDER_DEFAULT_MODEL[providerEm]} to candidates`);
+      }
     }
     if (plugin2.ollamaModelsFound?.length) {
       candidateAiModels = candidateAiModels.concat(plugin2.ollamaModelsFound.filter((m) => !candidateAiModels.includes(m)));
@@ -1310,8 +1379,8 @@ Will be utilized after your preliminary approval`,
       const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT);
       if (openaiKey && openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
         app.setSetting(plugin2.constants.labelApiKey, openaiKey.trim());
-        await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${DEFAULT_OPENAI_MODEL}", will be used for future AI lookups.`);
-        return [DEFAULT_OPENAI_MODEL];
+        await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${defaultProviderModel("openai")}", will be used for future AI lookups.`);
+        return [defaultProviderModel("openai")];
       } else {
         console.debug("User entered invalid OpenAI key");
         const nextStep = await app.alert(OPENAI_INVALID_KEY_TEXT, { actions: [
@@ -1536,9 +1605,12 @@ Will be utilized after your preliminary approval`,
       } else if (chosenImageURL) {
         console.debug("Fetching and uploading chosen URL", chosenImageURL);
         const imageData = await fetchImageAsDataURL(chosenImageURL);
+        console.debug("Got", imageData ? imageData.length : "no", "length image data");
         if (!note)
           note = await app.notes.find(app.context.noteUUID);
+        console.debug("Got note", note, "to insert image into");
         const ampleImageUrl = await note.attachMedia(imageData);
+        console.debug("Ample image URL returned as", ampleImageUrl, "returning it as image");
         return `![image](${ampleImageUrl})`;
       }
       return null;
@@ -1682,7 +1754,8 @@ ${taskArray.join("\n")}`);
   var plugin = {
     // --------------------------------------------------------------------------------------
     constants: {
-      labelApiKey: OPENAI_KEY_LABEL,
+      labelApiKey: null,
+      // Todo: Deprecate PROVIDER_SETTING_KEY_LABELS["openai"],
       labelAiModel: AI_MODEL_LABEL,
       pluginName: PLUGIN_NAME,
       requestTimeoutSeconds: 30
@@ -1781,14 +1854,14 @@ ${callCountByModelText}
       },
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PRECEDING_LABEL]: async function(app) {
-        const apiKey = await apiKeyFromAppOrUser(this, app);
+        const apiKey = await apiKeyFromAppOrUser(this, app, "openai");
         if (apiKey) {
           await imageFromPreceding(this, app, apiKey);
         }
       },
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PROMPT_LABEL]: async function(app) {
-        const apiKey = await apiKeyFromAppOrUser(this, app);
+        const apiKey = await apiKeyFromAppOrUser(this, app, "openai");
         if (apiKey) {
           await imageFromPrompt(this, app, apiKey);
         }
@@ -1989,7 +2062,7 @@ ${trimmedResponse || aiResponse}`, {
           return selectedValue;
         }
       } else {
-        const followUp = apiKeyFromApp(this, app)?.length ? "Consider adding an OpenAI API key to your plugin settings?" : "Try again?";
+        const followUp = apiKeyFromApp(this, app, "openai")?.length ? "Consider adding an OpenAI API key to your plugin settings?" : "Try again?";
         app.alert(`Unable to get a usable response from available AI models. ${followUp}`);
       }
       return null;

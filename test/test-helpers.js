@@ -60,6 +60,12 @@ export function mockPlugin() {
   plugin.ollamaModelsFound = null;
   plugin.callCountByModel = {};
   plugin.errorCountByModel = {};
+
+  // If LOCAL_MODELS is suspended, disable checking for local models (Ollama)
+  if (!LOCAL_MODELS_RUNNING) {
+    plugin.noLocalModels = true;
+  }
+
   return plugin;
 }
 
