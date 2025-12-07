@@ -5,11 +5,56 @@
   var MAX_REALISTIC_THESAURUS_RHYME_WORDS = 4;
   var REJECTED_RESPONSE_PREFIX = "The following responses were rejected:\n";
 
+  // lib/constants/settings.js
+  function settingKeyLabel(providerEm) {
+    return PROVIDER_SETTING_KEY_LABELS[providerEm];
+  }
+  var ADD_PROVIDER_API_KEY_LABEL = "Add Provider API key";
+  var AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
+  var AI_MODEL_LABEL = "Preferred AI models (comma separated)";
+  var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
+  var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
+  var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
+  var MAX_SPACES_ABORT_RESPONSE = 30;
+  var SUGGEST_TASKS_LABEL = "Suggest tasks";
+  var PLUGIN_NAME = "AmpleAI";
+  var PROVIDER_SETTING_KEY_LABELS = {
+    anthropic: "Anthropic API Key",
+    deepseek: "DeepSeek API Key",
+    gemini: "Gemini API Key",
+    grok: "Grok API Key",
+    openai: "OpenAI API Key"
+    // perplexity: "Perplexity API Key",
+  };
+
   // lib/constants/units.js
   var KILOBYTE = 1024;
   var TOKEN_CHARACTERS = 4;
 
   // lib/constants/provider.js
+  function configuredProvidersSorted(appSettings, modelsSetting) {
+    const preferredModels = parsePreferredModels(modelsSetting);
+    const sortedProviders = [];
+    for (const model of preferredModels) {
+      const providerEm = providerFromModel(model);
+      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
+      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
+      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
+      if (isConfigured && !sortedProviders.includes(providerEm)) {
+        sortedProviders.push(providerEm);
+      }
+    }
+    for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
+      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
+      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
+      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
+      console.log(`Provider ${providerEm} configured: ${isConfigured}`);
+      if (isConfigured && !sortedProviders.includes(providerEm)) {
+        sortedProviders.push(providerEm);
+      }
+    }
+    return sortedProviders;
+  }
   function defaultProviderModel(providerEm) {
     return PROVIDER_DEFAULT_MODEL[providerEm];
   }
@@ -18,6 +63,33 @@
   }
   function isModelOllama(model) {
     return !remoteAiModels().includes(model);
+  }
+  function modelForProvider(modelsSetting, providerEm) {
+    const preferredModels = parsePreferredModels(modelsSetting);
+    const providerModels = MODELS_PER_PROVIDER[providerEm];
+    for (const model of preferredModels) {
+      if (providerModels && providerModels.includes(model)) {
+        return model;
+      }
+    }
+    return PROVIDER_DEFAULT_MODEL[providerEm];
+  }
+  function parsePreferredModels(modelsSetting) {
+    if (!modelsSetting || typeof modelsSetting !== "string")
+      return [];
+    return modelsSetting.split(",").map((m) => m.trim()).filter(Boolean);
+  }
+  function providerEndpointUrl(model, apiKey) {
+    const providerEm = providerFromModel(model);
+    let endpoint = PROVIDER_ENDPOINTS[providerEm];
+    endpoint = endpoint.replace("{model-name}", model);
+    if (providerEm === "gemini") {
+      endpoint = `${endpoint}?key=${apiKey}`;
+    }
+    if (providerEm === "anthropic") {
+      endpoint = `${CORS_PROXY}/${endpoint}`;
+    }
+    return endpoint;
   }
   function providerFromModel(model) {
     for (const [providerEm, models] of Object.entries(MODELS_PER_PROVIDER)) {
@@ -38,21 +110,11 @@
     };
     return providerNames[providerEm] || providerEm.charAt(0).toUpperCase() + providerEm.slice(1);
   }
-  function providerEndpointUrl(model, apiKey) {
-    const providerEm = providerFromModel(model);
-    let endpoint = PROVIDER_ENDPOINTS[providerEm];
-    endpoint = endpoint.replace("{model-name}", model);
-    if (providerEm === "gemini") {
-      endpoint = `${endpoint}?key=${apiKey}`;
-    }
-    return endpoint;
-  }
   function remoteAiModels() {
     return Object.values(MODELS_PER_PROVIDER).flat();
   }
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
-  var MIN_OPENAI_KEY_CHARACTERS = 50;
   var MIN_API_KEY_CHARACTERS = {
     anthropic: 80,
     // sk-ant-api03- prefix + long string
@@ -205,16 +267,16 @@
     deepseek: Object.keys(DEEPSEEK_TOKEN_LIMITS),
     gemini: Object.keys(GEMINI_TOKEN_LIMITS),
     grok: Object.keys(GROK_TOKEN_LIMITS),
-    openai: Object.keys(OPENAI_TOKEN_LIMITS),
-    perplexity: Object.keys(PERPLEXITY_TOKEN_LIMITS)
+    openai: Object.keys(OPENAI_TOKEN_LIMITS)
+    // perplexity: Object.keys(PERPLEXITY_TOKEN_LIMITS),
   };
 
   // lib/constants/prompt-strings.js
   var APP_OPTION_VALUE_USE_PROMPT = "What would you like to do with this result?";
   var IMAGE_GENERATION_PROMPT = "What would you like to generate an image of?";
-  var NO_MODEL_FOUND_TEXT = `Could not find an available AI to call. Do you want to install and utilize Ollama, or would you prefer using OpenAI?
+  var NO_MODEL_FOUND_TEXT = `No AI provider has been to setup.
 
-For casual-to-intermediate users, we recommend using OpenAI, since it offers higher quality results and can generate images.`;
+For casual-to-intermediate users, we recommend using OpenAI, Anthropic and Gemini, since all offers high quality results. OpenAI can generate images.`;
   var OLLAMA_INSTALL_TEXT = `Rough installation instructions:
 1. Download Ollama: https://ollama.ai/download
 2. Install Ollama
@@ -225,11 +287,6 @@ You can test whether Ollama is running by invoking Quick Open and running the "$
   var OPENAI_API_KEY_TEXT = `Paste your LLM API key in the field below.
 
 Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
-  var OPENAI_INVALID_KEY_TEXT = `That doesn't seem to be a valid OpenAI API key. Possible next steps:
-
-1. Enter one later in the settings for this plugin
-2. Install Ollama
-3. Re-run this command and enter a valid OpenAI API key (must be at least ${MIN_OPENAI_KEY_CHARACTERS} characters)`;
   var PROVIDER_INVALID_KEY_TEXT = "That doesn't seem to be a valid API key. You can enter one later in the settings for this plugin.";
   var QUESTION_ANSWER_PROMPT = "What would you like to know?";
   var PROVIDER_API_KEY_TEXT = {
@@ -257,27 +314,6 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.openai}`,
 
 Your API key should start with "pplx-". Get your key here:
 ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
-  };
-
-  // lib/constants/settings.js
-  function settingKeyLabel(providerEm) {
-    return PROVIDER_SETTING_KEY_LABELS[providerEm];
-  }
-  var AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
-  var AI_MODEL_LABEL = "Preferred AI models (e.g., 'gpt-5.1, gemini-2.5-flash, claude-sonnet-4-5, grok-3-beta')";
-  var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
-  var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
-  var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
-  var MAX_SPACES_ABORT_RESPONSE = 30;
-  var SUGGEST_TASKS_LABEL = "Suggest tasks";
-  var PLUGIN_NAME = "AmpleAI";
-  var PROVIDER_SETTING_KEY_LABELS = {
-    anthropic: "Anthropic API Key",
-    deepseek: "DeepSeek API Key",
-    gemini: "Gemini API Key",
-    grok: "Grok API Key",
-    openai: "OpenAI API Key",
-    perplexity: "Perplexity API Key"
   };
 
   // lib/prompt-api-params.js
@@ -1273,8 +1309,7 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       case "anthropic":
         return {
           ...baseHeaders,
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01"
+          "x-api-key": apiKey
         };
       case "gemini":
         return baseHeaders;
@@ -1294,9 +1329,7 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         body = {
           model,
           messages: nonSystemMessages,
-          stream,
-          max_tokens: 4096
-          // Anthropic requires max_tokens
+          stream
         };
         if (systemMessage) {
           body.system = systemMessage.content;
@@ -1358,8 +1391,8 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         if (jsonResponseExpected && (model.includes("gpt-4") || model.includes("gpt-3.5-turbo-1106"))) {
           body.response_format = { type: "json_object" };
         }
-        console.debug(`Sending ${providerEm} body ${body} at ${/* @__PURE__ */ new Date()}`);
         const endpoint = providerEndpointUrl(model, apiKey);
+        console.debug(`Calling ${providerEm} at ${endpoint} with body ${body} at ${/* @__PURE__ */ new Date()}`);
         const headers = headersForProvider(providerEm, apiKey);
         response = await Promise.race([
           fetch(endpoint, {
@@ -1671,6 +1704,63 @@ Will be utilized after your preliminary approval`,
       return callRemoteAI(plugin2, app, aiModel, messages, promptKey, allowResponse, modelsQueried);
     }
   }
+  async function aiModelFromUserIntervention(plugin2, app, { defaultProvider = "openai", optionSelected = null } = {}) {
+    const providerOptions = [
+      { label: "Anthropic: Versatile provider most known for excellent coding models", value: "anthropic" },
+      { label: "Google: Gemini has shown dramatic improvement over 2025", value: "gemini" },
+      { label: "OpenAI: Popular all-around model. Offers image generation", value: "openai" },
+      { label: "Grok: Elon is spending a lot of money to play catchup, is it working?", value: "grok" },
+      { label: "DeepSeek: Chinese model good for deep thinking", value: "deepseek" },
+      { label: "Ollama: best for experts who want high customization, or a free option", value: "ollama" }
+    ];
+    const sortedConfiguredProviderEms = configuredProvidersSorted(app.settings, app.settings[AI_MODEL_LABEL]);
+    const configuredProviderNames = sortedConfiguredProviderEms.map((providerEm) => providerNameFromProviderEm(providerEm));
+    for (const option of providerOptions) {
+      if (option.value !== "ollama" && sortedConfiguredProviderEms.includes(option.value)) {
+        const modelName = modelForProvider(app.settings[AI_MODEL_LABEL], option.value);
+        option.label += `  \u2705 Currently using ${modelName}`;
+      }
+    }
+    const promptText = configuredProviderNames.length ? `Configured providers: ${configuredProviderNames.join(", ")}` : NO_MODEL_FOUND_TEXT;
+    optionSelected = optionSelected || await app.prompt(promptText, {
+      inputs: [
+        {
+          type: "radio",
+          label: "Which AI provider would you like enable?",
+          options: providerOptions,
+          value: defaultProvider
+        }
+      ]
+    });
+    if (optionSelected === "ollama") {
+      await app.alert(OLLAMA_INSTALL_TEXT);
+      return null;
+    }
+    if (REMOTE_AI_PROVIDER_EMS.includes(optionSelected)) {
+      const providerPrompt = PROVIDER_API_KEY_TEXT[optionSelected];
+      const existingKey = app.settings[PROVIDER_SETTING_KEY_LABELS[optionSelected]] || "";
+      const apiKey = await app.prompt(providerPrompt, { inputs: [{ label: "API Key", type: "string", value: existingKey }] });
+      const minKeyLength = MIN_API_KEY_CHARACTERS[optionSelected];
+      if (apiKey && apiKey.trim().length >= minKeyLength) {
+        const settingKey = PROVIDER_SETTING_KEY_LABELS[optionSelected];
+        await app.setSetting(settingKey, apiKey.trim());
+        app.settings[settingKey] = apiKey.trim();
+        console.log(`Saved API key for "${optionSelected}" in setting ${settingKey} app.settings`, app.settings, `Setting for key is "${app.settings[settingKey]}"`);
+        return await promptForProviderPrecedence(app);
+      } else {
+        console.debug(`User entered invalid ${optionSelected} key`);
+        const nextStep = await app.alert(PROVIDER_INVALID_KEY_TEXT, { actions: [
+          { icon: "settings", label: "Retry entering key" }
+        ] });
+        console.debug("nextStep selected", nextStep);
+        if (nextStep === 0) {
+          return await aiModelFromUserIntervention(plugin2, app, { optionSelected });
+        }
+        return null;
+      }
+    }
+    return null;
+  }
   function includingFallbackModels(plugin2, app, candidateAiModels) {
     for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
       const providerSettingLabel = PROVIDER_SETTING_KEY_LABELS[providerEm];
@@ -1685,53 +1775,34 @@ Will be utilized after your preliminary approval`,
     console.debug("Available models are", candidateAiModels);
     return candidateAiModels;
   }
-  async function aiModelFromUserIntervention(plugin2, app, { optionSelected = null } = {}) {
-    optionSelected = optionSelected || await app.prompt(NO_MODEL_FOUND_TEXT, {
-      inputs: [
-        {
-          type: "radio",
-          label: "Which AI provider would you like to set up?",
-          options: [
-            { label: "Anthropic: Versatile provider most known for excellent coding models", value: "anthropic" },
-            { label: "OpenAI: Popular all-around model. Offers image generation", value: "openai" },
-            { label: "Gemini: Google's standout LLM, much improved over 2025", value: "gemini" },
-            { label: "Grok: Elon is spending a lot of money to play catchup, is it working?", value: "grok" },
-            { label: "DeepSeek: Chinese model good for deep thinking", value: "deepseek" },
-            { label: "Perplexity: Advanced reasoning and search capabilities", value: "perplexity" },
-            { label: "Ollama: best for experts who want high customization, or a free option)", value: "ollama" }
-          ],
-          value: "openai"
-        }
-      ]
-    });
-    if (optionSelected === "ollama") {
-      await app.alert(OLLAMA_INSTALL_TEXT);
+  async function promptForProviderPrecedence(app) {
+    const configuredProviderEms = configuredProvidersSorted(app.settings, app.settings[AI_MODEL_LABEL]);
+    console.log("Found configuredProviderEms", configuredProviderEms, "from settings", app.settings[AI_MODEL_LABEL]);
+    if (configuredProviderEms.length === 0)
+      return [];
+    if (configuredProviderEms.length === 1) {
+      return app.settings[AI_MODEL_LABEL]?.length ? [app.settings[AI_MODEL_LABEL]] : [PROVIDER_DEFAULT_MODEL[configuredProviderEms[0]]];
+    }
+    const inputs = configuredProviderEms.map((providerEm, index) => ({
+      type: "string",
+      label: `${providerNameFromProviderEm(providerEm)} precedence`,
+      value: String(index + 1),
+      placeholder: "Enter number (1 = highest priority)"
+    }));
+    const promptText = "Set the priority for each AI provider (1 = highest priority, will be tried first)";
+    const results = await app.prompt(promptText, { inputs });
+    if (!results)
       return null;
+    const providerPrecedence = [];
+    for (let i = 0; i < configuredProviderEms.length; i++) {
+      const providerEm = configuredProviderEms[i];
+      const precedenceValue = parseInt(results[i]) || i + 1;
+      providerPrecedence.push({ providerEm, precedence: precedenceValue });
     }
-    if (REMOTE_AI_PROVIDER_EMS.includes(optionSelected)) {
-      const providerPrompt = PROVIDER_API_KEY_TEXT[optionSelected];
-      const apiKey = await app.prompt(providerPrompt);
-      const minKeyLength = MIN_API_KEY_CHARACTERS[optionSelected];
-      if (apiKey && apiKey.trim().length >= minKeyLength) {
-        const settingKey = PROVIDER_SETTING_KEY_LABELS[optionSelected];
-        app.setSetting(settingKey, apiKey.trim());
-        const providerName = providerNameFromProviderEm(optionSelected);
-        const defaultModel = defaultProviderModel(optionSelected);
-        await app.alert(`A ${providerName} API key was successfully stored. The default ${providerName} model, "${defaultModel}", will be used for future AI lookups.`);
-        return [defaultModel];
-      } else {
-        console.debug(`User entered invalid ${optionSelected} key`);
-        const nextStep = await app.alert(PROVIDER_INVALID_KEY_TEXT, { actions: [
-          { icon: "settings", label: "Retry entering key" }
-        ] });
-        console.debug("nextStep selected", nextStep);
-        if (nextStep === 0) {
-          return await aiModelFromUserIntervention(plugin2, app, { optionSelected });
-        }
-        return null;
-      }
-    }
-    return null;
+    providerPrecedence.sort((a, b) => a.precedence - b.precedence);
+    const sortedModels = providerPrecedence.map(({ providerEm }) => modelForProvider(app.settings[AI_MODEL_LABEL], providerEm));
+    app.setSetting(AI_MODEL_LABEL, sortedModels.join(", "));
+    return sortedModels;
   }
 
   // lib/functions/chat.js
@@ -2105,6 +2176,15 @@ ${taskArray.join("\n")}`);
     // --------------------------------------------------------------------------
     appOption: {
       // --------------------------------------------------------------------------
+      [ADD_PROVIDER_API_KEY_LABEL]: async function(app) {
+        const preferredModels = await aiModelFromUserIntervention(this, app, { defaultProvider: null });
+        if (preferredModels?.length) {
+          app.alert(`\u2705 Successfully added API key!${preferredModels?.length > 1 ? `
+
+Preferred models are now set to "${preferredModels.join(`", "`)}".` : ""}`);
+        }
+      },
+      // --------------------------------------------------------------------------
       [LOOK_UP_OLLAMA_MODEL_ACTION_LABEL]: async function(app) {
         const noOllamaString = `Unable to connect to Ollama. Ensure you stop the process if it is currently running, then start it with "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"`;
         try {
@@ -2424,4 +2504,5 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-})();
+  return plugin;
+})()
