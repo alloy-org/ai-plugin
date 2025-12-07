@@ -16,15 +16,57 @@
   function openAiTokenLimit(model) {
     return OPENAI_TOKEN_LIMITS[model];
   }
-  function openAiModels() {
-    return Object.keys(OPENAI_TOKEN_LIMITS);
-  }
   function isModelOllama(model) {
-    return !openAiModels().includes(model);
+    return !remoteAiModels().includes(model);
+  }
+  function providerFromModel(model) {
+    for (const [providerEm, models] of Object.entries(MODELS_PER_PROVIDER)) {
+      if (models.includes(model)) {
+        return providerEm;
+      }
+    }
+    throw new Error(`Model ${model} not found in any provider`);
+  }
+  function providerNameFromProviderEm(providerEm) {
+    const providerNames = {
+      anthropic: "Anthropic",
+      deepseek: "DeepSeek",
+      gemini: "Gemini",
+      grok: "Grok",
+      openai: "OpenAI",
+      perplexity: "Perplexity"
+    };
+    return providerNames[providerEm] || providerEm.charAt(0).toUpperCase() + providerEm.slice(1);
+  }
+  function providerEndpointUrl(model, apiKey) {
+    const providerEm = providerFromModel(model);
+    let endpoint = PROVIDER_ENDPOINTS[providerEm];
+    endpoint = endpoint.replace("{model-name}", model);
+    if (providerEm === "gemini") {
+      endpoint = `${endpoint}?key=${apiKey}`;
+    }
+    return endpoint;
+  }
+  function remoteAiModels() {
+    return Object.values(MODELS_PER_PROVIDER).flat();
   }
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
   var MIN_OPENAI_KEY_CHARACTERS = 50;
+  var MIN_API_KEY_CHARACTERS = {
+    anthropic: 80,
+    // sk-ant-api03- prefix + long string
+    deepseek: 40,
+    // Standard API key length
+    gemini: 30,
+    // AIza prefix + ~35 chars
+    grok: 40,
+    // xai- prefix + ~48 chars
+    openai: 50,
+    // sk- prefix + ~48 chars
+    perplexity: 40
+    // pplx- prefix + ~44 chars
+  };
   var OLLAMA_URL = "http://localhost:11434";
   var OLLAMA_TOKEN_CHARACTER_LIMIT = 2e4;
   var OLLAMA_MODEL_PREFERENCES = [
@@ -32,12 +74,22 @@
     "openhermes2.5-mistral",
     "llama2"
   ];
+  var PROVIDER_API_KEY_RETRIEVE_URL = {
+    anthropic: "https://console.anthropic.com/settings/keys",
+    deepseek: "https://platform.deepseek.com/api_keys",
+    gemini: "https://aistudio.google.com/app/api-keys",
+    grok: "https://console.x.ai/team/default/api-keys",
+    // Originally Claude thought it https://x.com/settings/grok/api-keys"
+    openai: "https://platform.openai.com/api-keys",
+    // https://platform.openai.com/docs/api-reference/authentication
+    perplexity: "https://www.perplexity.ai/account/api/keys"
+  };
   var PROVIDER_DEFAULT_MODEL = {
-    anthropic: "claude-sonnet-4-0",
+    anthropic: "claude-sonnet-4-5",
     deepseek: "deepseek-chat",
     gemini: "gemini-2.5-flash",
-    grok: "grok-3-beta",
-    openai: "gpt-4o",
+    grok: "grok-4-1-fast",
+    openai: "gpt-5.1",
     perplexity: "sonar-pro"
   };
   var PROVIDER_ENDPOINTS = {
@@ -49,48 +101,97 @@
     // https://platform.openai.com/docs/api-reference/chat/create
     perplexity: "https://api.perplexity.ai/chat/completions"
   };
+  var REMOTE_AI_PROVIDER_EMS = Object.keys(PROVIDER_ENDPOINTS);
   var ANTHROPIC_TOKEN_LIMITS = {
-    "claude-opus-4-0": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-sonnet-4-0": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-3-7-sonnet-latest": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-3-5-sonnet-latest": 128 * KILOBYTE * TOKEN_CHARACTERS
+    // Latest models (Claude 4.5 family)
+    "claude-sonnet-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-sonnet-4-5-20250929": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-haiku-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-haiku-4-5-20251001": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-opus-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-opus-4-5-20251101": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    // Legacy models (Claude 4 family)
+    "claude-opus-4-1": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-opus-4-1-20250805": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-sonnet-4-0": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-sonnet-4-20250514": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-3-7-sonnet-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-3-7-sonnet-20250219": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-opus-4-0": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-opus-4-20250514": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    // Legacy models (Claude 3.5 family)
+    "claude-3-5-haiku-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-3-5-haiku-20241022": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "claude-3-5-sonnet-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    // Legacy models (Claude 3 family)
+    "claude-3-haiku-20240307": 200 * KILOBYTE * TOKEN_CHARACTERS
   };
   var DEEPSEEK_TOKEN_LIMITS = {
     "deepseek-chat": 64 * KILOBYTE * TOKEN_CHARACTERS,
     "deepseek-reasoner": 64 * KILOBYTE * TOKEN_CHARACTERS,
+    "deepseek-r1": 64 * KILOBYTE * TOKEN_CHARACTERS,
     "deepseek-r1-0528": 64 * KILOBYTE * TOKEN_CHARACTERS
   };
   var GEMINI_TOKEN_LIMITS = {
-    "gemini-2.5-pro": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-2.5-flash": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-2.5-flash-lite-preview-06-17": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-2.0-flash": 512 * KILOBYTE * TOKEN_CHARACTERS
+    // Gemini 3 family (latest)
+    "gemini-3-pro": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-3-pro-preview": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-3-pro-image-preview": 64 * KILOBYTE * TOKEN_CHARACTERS,
+    // Gemini 2.5 family
+    "gemini-2.5-pro": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-2.5-flash": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-2.5-flash-lite": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-2.5-flash-lite-preview-06-17": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+    // Gemini 2.0 family
+    "gemini-2.0-flash": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+    "gemini-2.0-flash-lite": 1024 * KILOBYTE * TOKEN_CHARACTERS
   };
   var GROK_TOKEN_LIMITS = {
+    // Grok 4 family (latest)
+    "grok-4-1-fast": 2048 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-4-fast": 2048 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-4": 256 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-4-0709": 256 * KILOBYTE * TOKEN_CHARACTERS,
+    // Grok 3 family
+    "grok-3": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "grok-3-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "grok-3-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "grok-3-mini-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    // Grok 2 family
     "grok-2-vision-1212": 8 * KILOBYTE * TOKEN_CHARACTERS,
     "grok-2-image-1212": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "grok-2-1212": 128 * KILOBYTE * TOKEN_CHARACTERS
   };
   var OPENAI_TOKEN_LIMITS = {
-    "gpt-3.5": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-16k": 16 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-1106": 16 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-instruct": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4": 8 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4.1": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    // GPT-5 family (latest)
+    "gpt-5": 400 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-5.1": 400 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-5.1-codex-max": 400 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-5-fast": 400 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-5-thinking": 400 * KILOBYTE * TOKEN_CHARACTERS,
+    // GPT-4.1 family
+    "gpt-4.1": 1e3 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4.1-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    // GPT-4o family
     "gpt-4o": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-4o-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
+    // O-series models
+    "o3": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "o3-mini": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "o3-pro": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    "o4-mini": 200 * KILOBYTE * TOKEN_CHARACTERS,
+    // Legacy GPT-4 models
+    "gpt-4": 8 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-1106-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-32k": 32 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-32k-0613": 32 * KILOBYTE * TOKEN_CHARACTERS,
     "gpt-4-vision-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "o3": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "o3-mini": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "o3-pro": 512 * KILOBYTE * TOKEN_CHARACTERS,
-    "o4-mini": 512 * KILOBYTE * TOKEN_CHARACTERS
+    // Legacy GPT-3.5 models
+    "gpt-3.5": 4 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-3.5-turbo": 4 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-3.5-turbo-16k": 16 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-3.5-turbo-1106": 16 * KILOBYTE * TOKEN_CHARACTERS,
+    "gpt-3.5-turbo-instruct": 4 * KILOBYTE * TOKEN_CHARACTERS
   };
   var PERPLEXITY_TOKEN_LIMITS = {
     "sonar-pro": 200 * KILOBYTE * TOKEN_CHARACTERS,
@@ -98,6 +199,14 @@
     "sonar-reasoning-pro": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "sonar-reasoning": 128 * KILOBYTE * TOKEN_CHARACTERS,
     "sonar-deep-research": 128 * KILOBYTE * TOKEN_CHARACTERS
+  };
+  var MODELS_PER_PROVIDER = {
+    anthropic: Object.keys(ANTHROPIC_TOKEN_LIMITS),
+    deepseek: Object.keys(DEEPSEEK_TOKEN_LIMITS),
+    gemini: Object.keys(GEMINI_TOKEN_LIMITS),
+    grok: Object.keys(GROK_TOKEN_LIMITS),
+    openai: Object.keys(OPENAI_TOKEN_LIMITS),
+    perplexity: Object.keys(PERPLEXITY_TOKEN_LIMITS)
   };
 
   // lib/constants/prompt-strings.js
@@ -121,14 +230,41 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
 1. Enter one later in the settings for this plugin
 2. Install Ollama
 3. Re-run this command and enter a valid OpenAI API key (must be at least ${MIN_OPENAI_KEY_CHARACTERS} characters)`;
+  var PROVIDER_INVALID_KEY_TEXT = "That doesn't seem to be a valid API key. You can enter one later in the settings for this plugin.";
   var QUESTION_ANSWER_PROMPT = "What would you like to know?";
+  var PROVIDER_API_KEY_TEXT = {
+    anthropic: `Paste your Anthropic API key in the field below.
+
+Your API key should start with "sk-ant-api03-". Get your key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.anthropic}`,
+    deepseek: `Paste your DeepSeek API key in the field below.
+
+Sign up for a DeepSeek account and get your API key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.deepseek}`,
+    gemini: `Paste your Gemini API key in the field below.
+
+Your API key should start with "AIza". Get your key from Google AI Studio:
+${PROVIDER_API_KEY_RETRIEVE_URL.gemini}`,
+    grok: `Paste your Grok API key in the field below.
+
+Your API key should start with "xai-". Get your key from the xAI console:
+${PROVIDER_API_KEY_RETRIEVE_URL.grok}`,
+    openai: `Paste your OpenAI API key in the field below.
+
+Your API key should start with "sk-". Get your key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.openai}`,
+    perplexity: `Paste your Perplexity API key in the field below.
+
+Your API key should start with "pplx-". Get your key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
+  };
 
   // lib/constants/settings.js
   function settingKeyLabel(providerEm) {
     return PROVIDER_SETTING_KEY_LABELS[providerEm];
   }
   var AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
-  var AI_MODEL_LABEL = "Preferred AI models (e.g., 'gpt-4o, claude-4-sonnet, grok-3-beta')";
+  var AI_MODEL_LABEL = "Preferred AI models (e.g., 'gpt-5.1, gemini-2.5-flash, claude-sonnet-4-5, grok-3-beta')";
   var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
   var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
   var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
@@ -220,7 +356,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         if (afterSentence.length) {
           const afterSentenceIndex = refinedAnswer.indexOf(afterSentence);
           if (afterSentenceIndex !== -1) {
-            console.error("OpenAI seems to have returned content after prompt. Truncating");
+            console.error("LLM response seems to have returned content after prompt. Truncating");
             refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
           }
         }
@@ -229,7 +365,7 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     const originalLines = noteContent.split("\n").map((w) => w.trim());
     const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim())).join("\n");
     const withoutJunkLines = cleanTextFromAnswer(withoutOriginalLines);
-    console.debug(`Answer originally ${answer.length} length, refined answer ${refinedAnswer.length}. Without repeated lines ${withoutJunkLines.length} length`);
+    console.debug(`Answer originally ${answer.length} length, refined answer length ${refinedAnswer.length} ("${refinedAnswer}"). Without repeated lines ${withoutJunkLines.length} length`);
     return withoutJunkLines.trim();
   }
   function balancedJsonFromString(string) {
@@ -396,8 +532,34 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
     }
     return null;
   }
+  function contentFromProviderResponse(providerEm, jsonResponse) {
+    let content;
+    switch (providerEm) {
+      case "anthropic":
+        content = jsonResponse?.content?.at(0)?.text;
+        break;
+      case "gemini":
+        content = jsonResponse?.candidates?.at(0)?.content?.parts?.at(0)?.text;
+        break;
+      case "ollama":
+        content = jsonResponse?.message?.content || jsonResponse?.response;
+        break;
+      case "deepseek":
+      case "grok":
+      case "openai":
+      case "perplexity":
+      default:
+        content = jsonResponse?.choices?.at(0)?.message?.content || jsonResponse?.choices?.at(0)?.message?.tool_calls?.at(0)?.function?.arguments;
+        break;
+    }
+    if (!content) {
+      console.debug(`Could not extract content from ${providerEm} response:`, JSON.stringify(jsonResponse, null, 2));
+    }
+    return content || null;
+  }
   async function responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds = 30 } = {}) {
     const jsonResponseExpected = isJsonPrompt(promptKey);
+    const providerEm = providerFromModel(model);
     let result;
     if (streamCallback) {
       result = await responseTextFromStreamResponse(app, response, model, jsonResponseExpected, streamCallback);
@@ -407,11 +569,11 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
         await Promise.race([
           new Promise(async (resolve, _) => {
             const jsonResponse = await response.json();
-            result = jsonResponse?.choices?.at(0)?.message?.content || jsonResponse?.choices?.at(0)?.message?.tool_calls?.at(0)?.function?.arguments || jsonResponse?.message?.content || jsonResponse?.response;
+            result = contentFromProviderResponse(providerEm, jsonResponse);
             resolve(result);
           }),
           new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Ollama timeout")), timeoutSeconds * 1e3)
+            (_, reject) => setTimeout(() => reject(new Error(`${providerEm} Timeout`)), timeoutSeconds * 1e3)
           )
         ]);
       } catch (e) {
@@ -472,7 +634,6 @@ Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
             jsonResponse = JSON.parse(testContent.substring(jsonStart));
             return { failedParseContent: null, jsonResponse };
           } catch (err) {
-            console.debug("Moving start position didn't fix JSON parse error");
           }
         }
         return { failedParseContent: testContent };
@@ -961,7 +1122,6 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         }
       }
     }
-    console.debug("Got user messages", userPrompts, "for", promptKey, "given promptParams", promptParams);
     return userPrompts;
   }
   function relevantContentFromContent(content, contentIndex, contentLimit) {
@@ -1079,18 +1239,19 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
   }
 
   // lib/fetch-ai-provider.js
-  async function callOpenAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
-    model = model?.trim()?.length ? model : defaultProviderModel("openai");
+  async function callRemoteAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
+    const providerEm = providerFromModel(model);
+    model = model?.trim()?.length ? model : defaultProviderModel(providerEm);
     const tools = toolsValueFromPrompt(promptKey);
     const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, promptKey) : null;
     try {
+      const providerApiKey = apiKeyFromApp(plugin2, app, providerEm);
       return await requestWithRetry(
         app,
         model,
         messages,
-        "openai",
         tools,
-        apiKeyFromApp(plugin2, app, "openai"),
+        providerApiKey,
         promptKey,
         streamCallback,
         allowResponse,
@@ -1098,20 +1259,94 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       );
     } catch (error) {
       if (plugin2.isTestEnvironment) {
-        console.error("Failed to call OpenAI", error);
+        throw error;
       } else {
-        app.alert("Failed to call OpenAI: " + error);
+        const providerName = providerNameFromProviderEm(providerEm);
+        app.alert(`Failed to call ${providerName}: ${error}`);
       }
       return null;
     }
   }
-  async function requestWithRetry(app, model, messages, providerEm, tools, apiKey, promptKey, streamCallback, allowResponse, {
+  function headersForProvider(providerEm, apiKey) {
+    const baseHeaders = { "Content-Type": "application/json" };
+    switch (providerEm) {
+      case "anthropic":
+        return {
+          ...baseHeaders,
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01"
+        };
+      case "gemini":
+        return baseHeaders;
+      default:
+        return {
+          ...baseHeaders,
+          "Authorization": `Bearer ${apiKey}`
+        };
+    }
+  }
+  function requestBodyForProvider(model, messages, stream, tools, promptKey) {
+    let body;
+    switch (providerFromModel(model)) {
+      case "anthropic": {
+        const systemMessage = messages.find((m) => m.role === "system");
+        const nonSystemMessages = messages.filter((m) => m.role !== "system");
+        body = {
+          model,
+          messages: nonSystemMessages,
+          stream,
+          max_tokens: 4096
+          // Anthropic requires max_tokens
+        };
+        if (systemMessage) {
+          body.system = systemMessage.content;
+        }
+        break;
+      }
+      case "gemini": {
+        const systemMsg = messages.find((m) => m.role === "system");
+        const nonSystemMsgs = messages.filter((m) => m.role !== "system");
+        body = {
+          contents: nonSystemMsgs.map((m) => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }]
+          }))
+        };
+        if (systemMsg) {
+          body.systemInstruction = { parts: [{ text: systemMsg.content }] };
+        }
+        break;
+      }
+      case "grok":
+      case "perplexity":
+        body = { model, messages, stream };
+        if (tools)
+          body.tools = tools;
+        break;
+      case "deepseek":
+      case "openai":
+      default: {
+        body = { model, messages, stream };
+        if (tools)
+          body.tools = tools;
+        const supportsFrequencyPenalty = !model.match(/^(o\d|gpt-5)/);
+        if (supportsFrequencyPenalty) {
+          body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
+        }
+        break;
+      }
+    }
+    return body;
+  }
+  async function requestWithRetry(app, model, messages, tools, apiKey, promptKey, streamCallback, allowResponse, {
     retries = 3,
     timeoutSeconds = 30
   } = {}) {
     let error, response;
+    const providerEm = providerFromModel(model);
+    const providerName = providerNameFromProviderEm(providerEm);
     if (!apiKey?.length) {
-      app.alert("Please configure your OpenAI key in plugin settings.");
+      app.alert(`Please configure your ${providerName} API key in plugin settings.`);
       return null;
     }
     const jsonResponseExpected = isJsonPrompt(promptKey);
@@ -1119,21 +1354,17 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       if (i > 0)
         console.debug(`Loop ${i + 1}: Retrying ${model} with ${promptKey}`);
       try {
-        const body = { model, messages, stream: !!streamCallback };
-        if (tools)
-          body.tools = tools;
-        body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
+        const body = requestBodyForProvider(model, messages, !!streamCallback, tools, promptKey);
         if (jsonResponseExpected && (model.includes("gpt-4") || model.includes("gpt-3.5-turbo-1106"))) {
           body.response_format = { type: "json_object" };
         }
         console.debug(`Sending ${providerEm} body ${body} at ${/* @__PURE__ */ new Date()}`);
+        const endpoint = providerEndpointUrl(model, apiKey);
+        const headers = headersForProvider(providerEm, apiKey);
         response = await Promise.race([
-          fetch(PROVIDER_ENDPOINTS[providerEm], {
+          fetch(endpoint, {
             method: "POST",
-            headers: {
-              "Authorization": `Bearer ${apiKey}`,
-              "Content-Type": "application/json"
-            },
+            headers,
             body: JSON.stringify(body)
           }),
           new Promise(
@@ -1152,29 +1383,95 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     if (response?.ok) {
       return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
     } else if (!response) {
-      app.alert("Failed to call OpenAI: " + error);
+      app.alert(`Failed to call ${providerName}: ${error}`);
       return null;
     } else if (response.status === 401) {
-      app.alert("Invalid OpenAI key. Please configure your OpenAI key in plugin settings.");
+      app.alert(`Invalid ${providerName} API key. Please configure your ${providerName} key in plugin settings.`);
       return null;
     } else {
       const result = await response.json();
+      console.error(`API error response from ${providerName}:`, result);
       if (result && result.error) {
-        app.alert("Failed to call OpenAI: " + result.error.message);
+        const errorMessage = result.error.message || JSON.stringify(result.error);
+        app.alert(`Failed to call ${providerName}: ${errorMessage}`);
         return null;
       }
     }
   }
-  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
-    let stop = false, jsonResponse;
-    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
+  function parseAnthropicStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected) {
+    let stop = false;
     const incrementalContents = [];
+    const lines = decodedValue.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith("event:")) {
+        const eventType = line.substring(6).trim();
+        if (eventType === "message_stop") {
+          console.debug("Received message_stop from Anthropic");
+          stop = true;
+          break;
+        }
+      } else if (line.startsWith("data:")) {
+        try {
+          const data = JSON.parse(line.substring(5).trim());
+          if (data.type === "content_block_delta" && data.delta?.text) {
+            const content = data.delta.text;
+            incrementalContents.push(content);
+            receivedContent += content;
+            app.alert(receivedContent, {
+              actions: [{ icon: "pending", label: "Generating response" }],
+              preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+              scrollToEnd: true
+            });
+          }
+        } catch (e) {
+        }
+      }
+    }
+    return { stop, incrementalContents, receivedContent };
+  }
+  function parseGeminiStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent) {
+    let stop = false;
+    const incrementalContents = [];
+    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
+    for (const jsonString of responses) {
+      if (jsonString.includes("[DONE]")) {
+        console.debug("Received [DONE] from Gemini");
+        stop = true;
+        break;
+      }
+      let jsonResponse;
+      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
+      if (jsonResponse) {
+        const content = jsonResponse.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (content) {
+          incrementalContents.push(content);
+          receivedContent += content;
+          app.alert(receivedContent, {
+            actions: [{ icon: "pending", label: "Generating response" }],
+            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+            scrollToEnd: true
+          });
+        } else if (jsonResponse.candidates?.[0]?.finishReason) {
+          console.log("Finishing Gemini stream for reason", jsonResponse.candidates[0].finishReason);
+          stop = true;
+          break;
+        }
+      }
+    }
+    return { stop, incrementalContents, receivedContent, failedParseContent };
+  }
+  function parseOpenAICompatibleStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent) {
+    let stop = false;
+    const incrementalContents = [];
+    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
     for (const jsonString of responses) {
       if (jsonString.includes("[DONE]")) {
         console.debug("Received [DONE] from jsonString");
         stop = true;
         break;
       }
+      let jsonResponse;
       ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
       if (jsonResponse) {
         const content = jsonResponse.choices?.[0]?.delta?.content || jsonResponse.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments;
@@ -1195,7 +1492,34 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         }
       }
     }
-    return { abort: stop, failedParseContent, incrementalContents, receivedContent };
+    return { stop, incrementalContents, receivedContent, failedParseContent };
+  }
+  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
+    const providerEm = providerFromModel(aiModel);
+    let result;
+    switch (providerEm) {
+      case "anthropic":
+        result = parseAnthropicStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected);
+        break;
+      case "gemini":
+        result = parseGeminiStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent);
+        break;
+      case "deepseek":
+      case "grok":
+      case "openai":
+      case "perplexity":
+        result = parseOpenAICompatibleStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent);
+        break;
+      default:
+        console.error(`Unknown provider for streaming: ${providerEm}`);
+        result = { stop: true, incrementalContents: [], receivedContent, failedParseContent };
+    }
+    return {
+      abort: result.stop,
+      failedParseContent: result.failedParseContent || null,
+      incrementalContents: result.incrementalContents,
+      receivedContent: result.receivedContent
+    };
   }
 
   // lib/model-picker.js
@@ -1329,7 +1653,7 @@ Will be utilized after your preliminary approval`,
         return { response, modelUsed: aiModel };
       } else {
         plugin2.errorCountByModel[aiModel] = (plugin2.errorCountByModel[aiModel] || 0) + 1;
-        console.error("Failed to make call with", aiModel, "response", response, "while messages are", messages, "Error counts", plugin2.errorCountByModel);
+        console.error(`Failed to make call with "${aiModel}" response "${response}" while messages are "${messages}". Error counts`, plugin2.errorCountByModel);
       }
     }
     if (modelsQueried.length && modelsQueried.find((m) => isModelOllama(m)) && !plugin2.noLocalModels) {
@@ -1344,11 +1668,11 @@ Will be utilized after your preliminary approval`,
     if (isModelOllama(aiModel)) {
       return callOllama(plugin2, app, aiModel, messages, promptKey, allowResponse, modelsQueried);
     } else {
-      return callOpenAI(plugin2, app, aiModel, messages, promptKey, allowResponse, modelsQueried);
+      return callRemoteAI(plugin2, app, aiModel, messages, promptKey, allowResponse, modelsQueried);
     }
   }
   function includingFallbackModels(plugin2, app, candidateAiModels) {
-    for (const providerEm of Object.keys(PROVIDER_SETTING_KEY_LABELS)) {
+    for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
       const providerSettingLabel = PROVIDER_SETTING_KEY_LABELS[providerEm];
       if (app.settings[providerSettingLabel]?.length && !candidateAiModels.find((m) => m === PROVIDER_DEFAULT_MODEL[providerEm])) {
         candidateAiModels.push(PROVIDER_DEFAULT_MODEL[providerEm]);
@@ -1358,7 +1682,7 @@ Will be utilized after your preliminary approval`,
     if (plugin2.ollamaModelsFound?.length) {
       candidateAiModels = candidateAiModels.concat(plugin2.ollamaModelsFound.filter((m) => !candidateAiModels.includes(m)));
     }
-    console.debug("Ended with", candidateAiModels);
+    console.debug("Available models are", candidateAiModels);
     return candidateAiModels;
   }
   async function aiModelFromUserIntervention(plugin2, app, { optionSelected = null } = {}) {
@@ -1366,24 +1690,38 @@ Will be utilized after your preliminary approval`,
       inputs: [
         {
           type: "radio",
-          label: "Which model would you prefer to use?",
+          label: "Which AI provider would you like to set up?",
           options: [
-            { label: "OpenAI: best for most users. Offers image generation", value: "openai" },
+            { label: "Anthropic: Versatile provider most known for excellent coding models", value: "anthropic" },
+            { label: "OpenAI: Popular all-around model. Offers image generation", value: "openai" },
+            { label: "Gemini: Google's standout LLM, much improved over 2025", value: "gemini" },
+            { label: "Grok: Elon is spending a lot of money to play catchup, is it working?", value: "grok" },
+            { label: "DeepSeek: Chinese model good for deep thinking", value: "deepseek" },
+            { label: "Perplexity: Advanced reasoning and search capabilities", value: "perplexity" },
             { label: "Ollama: best for experts who want high customization, or a free option)", value: "ollama" }
           ],
           value: "openai"
         }
       ]
     });
-    if (optionSelected === "openai") {
-      const openaiKey = await app.prompt(OPENAI_API_KEY_TEXT);
-      if (openaiKey && openaiKey.length >= MIN_OPENAI_KEY_CHARACTERS) {
-        app.setSetting(plugin2.constants.labelApiKey, openaiKey.trim());
-        await app.alert(`An OpenAI was successfully stored. The default OpenAI model, "${defaultProviderModel("openai")}", will be used for future AI lookups.`);
-        return [defaultProviderModel("openai")];
+    if (optionSelected === "ollama") {
+      await app.alert(OLLAMA_INSTALL_TEXT);
+      return null;
+    }
+    if (REMOTE_AI_PROVIDER_EMS.includes(optionSelected)) {
+      const providerPrompt = PROVIDER_API_KEY_TEXT[optionSelected];
+      const apiKey = await app.prompt(providerPrompt);
+      const minKeyLength = MIN_API_KEY_CHARACTERS[optionSelected];
+      if (apiKey && apiKey.trim().length >= minKeyLength) {
+        const settingKey = PROVIDER_SETTING_KEY_LABELS[optionSelected];
+        app.setSetting(settingKey, apiKey.trim());
+        const providerName = providerNameFromProviderEm(optionSelected);
+        const defaultModel = defaultProviderModel(optionSelected);
+        await app.alert(`A ${providerName} API key was successfully stored. The default ${providerName} model, "${defaultModel}", will be used for future AI lookups.`);
+        return [defaultModel];
       } else {
-        console.debug("User entered invalid OpenAI key");
-        const nextStep = await app.alert(OPENAI_INVALID_KEY_TEXT, { actions: [
+        console.debug(`User entered invalid ${optionSelected} key`);
+        const nextStep = await app.alert(PROVIDER_INVALID_KEY_TEXT, { actions: [
           { icon: "settings", label: "Retry entering key" }
         ] });
         console.debug("nextStep selected", nextStep);
@@ -1392,10 +1730,8 @@ Will be utilized after your preliminary approval`,
         }
         return null;
       }
-    } else if (optionSelected === "ollama") {
-      await app.alert(OLLAMA_INSTALL_TEXT);
-      return null;
     }
+    return null;
   }
 
   // lib/functions/chat.js
