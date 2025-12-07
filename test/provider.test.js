@@ -1,5 +1,5 @@
-import { ADD_PROVIDER_API_KEY_LABEL, PROVIDER_SETTING_KEY_LABELS } from "../lib/constants/settings"
-import { MIN_API_KEY_CHARACTERS, REMOTE_AI_PROVIDER_EMS } from "../lib/constants/provider"
+import { ADD_PROVIDER_API_KEY_LABEL, AI_MODEL_LABEL, PROVIDER_SETTING_KEY_LABELS } from "../lib/constants/settings"
+import { MIN_API_KEY_CHARACTERS, PROVIDER_DEFAULT_MODEL, REMOTE_AI_PROVIDER_EMS } from "../lib/constants/provider"
 import { jest } from "@jest/globals"
 import { mockApp, mockPlugin } from "./test-helpers"
 
@@ -17,8 +17,8 @@ describe("Add Provider API key", () => {
 
   // --------------------------------------------------------------------------------------
   it("should save API keys for all remote AI providers", async () => {
+    const app = mockApp();
     for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
-      const app = mockApp();
       const mockApiKey = createMockApiKey(providerEm);
 
       app.prompt.mockImplementation(async (prompt, options) => {
@@ -26,17 +26,27 @@ describe("Add Provider API key", () => {
         if (options?.inputs?.[0]?.options) {
           return providerEm;
         }
-        // Second prompt: enter API key
+        // Second prompt: enter API key or precedence
+        if (options?.inputs?.[0]?.label?.includes("precedence")) {
+          // Precedence prompt - return default values
+          return options.inputs.map(input => input.value || "1");
+        }
         return mockApiKey;
       });
 
       await plugin.appOption[ADD_PROVIDER_API_KEY_LABEL](app);
 
+      // Verify API key was saved
       expect(app.setSetting).toHaveBeenCalledWith(
         PROVIDER_SETTING_KEY_LABELS[providerEm],
         mockApiKey
       );
+
+      // Verify AI_MODEL_LABEL contains the provider's model
+      expect(app.settings[AI_MODEL_LABEL]).toContain(PROVIDER_DEFAULT_MODEL[providerEm]);
     }
+
+    expect(app.settings[AI_MODEL_LABEL].split(",").length).toBe(REMOTE_AI_PROVIDER_EMS.length);
   });
 
   // --------------------------------------------------------------------------------------
@@ -51,6 +61,7 @@ describe("Add Provider API key", () => {
         if (options?.inputs?.[0]?.options) {
           return providerEm;
         }
+        // For API key entry or precedence prompts
         return mockApiKey;
       });
 
@@ -64,12 +75,15 @@ describe("Add Provider API key", () => {
       expect(app.settings[settingKey].length).toBeGreaterThanOrEqual(MIN_API_KEY_CHARACTERS[providerEm]);
     }
 
-    // Verify setSetting was called the correct number of times
-    expect(app.setSetting).toHaveBeenCalledTimes(providersToTest.length);
+    // Verify AI_MODEL_LABEL contains all three providers' models
+    const aiModelSetting = app.settings[AI_MODEL_LABEL];
+    for (const providerEm of providersToTest) {
+      expect(aiModelSetting).toContain(PROVIDER_DEFAULT_MODEL[providerEm]);
+    }
   });
 
   // --------------------------------------------------------------------------------------
-  it("should show configured providers with checkmark indicator", async () => {
+  it("should show configured providers with checkmark and model name", async () => {
     const app = mockApp();
 
     // Clear all provider keys and manually configure only OpenAI
@@ -91,13 +105,14 @@ describe("Add Provider API key", () => {
 
     await plugin.appOption[ADD_PROVIDER_API_KEY_LABEL](app);
 
-    // Verify OpenAI option has setup indicator (was pre-configured)
+    // Verify OpenAI option has checkmark and model name (was pre-configured)
     const openaiOption = capturedOptions.inputs[0].options.find(opt => opt.value === "openai");
-    expect(openaiOption.label).toContain("✅ Setup");
+    expect(openaiOption.label).toContain("✅");
+    expect(openaiOption.label).toContain(PROVIDER_DEFAULT_MODEL.openai);
 
-    // Verify DeepSeek option does not have setup indicator (wasn't configured when prompt was shown)
+    // Verify DeepSeek option does not have checkmark (wasn't configured when prompt was shown)
     const deepseekOption = capturedOptions.inputs[0].options.find(opt => opt.value === "deepseek");
-    expect(deepseekOption.label).not.toContain("✅ Setup");
+    expect(deepseekOption.label).not.toContain("✅");
   });
 
   // --------------------------------------------------------------------------------------
@@ -105,15 +120,21 @@ describe("Add Provider API key", () => {
     const app = mockApp();
     const shortApiKey = "sk-short"; // Too short
     const validApiKey = createMockApiKey("openai");
-    let attemptCount = 0;
+    let apiKeyAttemptCount = 0;
 
     app.prompt.mockImplementation(async (prompt, options) => {
+      // Provider selection
       if (options?.inputs?.[0]?.options) {
         return "openai";
       }
+      // Check if this is precedence prompt (has multiple inputs for providers) or API key entry
+      if (options?.inputs?.length > 1 || (options?.inputs?.[0]?.label?.includes("precedence"))) {
+        // Precedence prompt - return default values
+        return options.inputs.map(input => input.value || "1");
+      }
       // API key entry
-      attemptCount++;
-      return attemptCount === 1 ? shortApiKey : validApiKey;
+      apiKeyAttemptCount++;
+      return apiKeyAttemptCount === 1 ? shortApiKey : validApiKey;
     });
 
     app.alert.mockImplementation(async (text, options) => {
@@ -127,7 +148,7 @@ describe("Add Provider API key", () => {
     await plugin.appOption[ADD_PROVIDER_API_KEY_LABEL](app);
 
     // Should have been called twice - once with invalid, once with valid
-    expect(attemptCount).toBe(2);
+    expect(apiKeyAttemptCount).toBe(2);
     expect(app.setSetting).toHaveBeenCalledWith(
       PROVIDER_SETTING_KEY_LABELS.openai,
       validApiKey
