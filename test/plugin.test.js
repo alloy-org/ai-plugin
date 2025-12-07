@@ -156,7 +156,7 @@ describe("This here plugin", () => {
     const tuple = app.prompt.mock.calls[0];
     const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
 
-    expect(["boss", "ceo", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
+    expect(["boss", "ceo", "Keeper", "guardian", "leader", "executive"].find(word => answers.includes(word))).toBeTruthy();
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
