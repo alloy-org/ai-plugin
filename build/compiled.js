@@ -48,7 +48,6 @@
       const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
       const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
       const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
-      console.log(`Provider ${providerEm} configured: ${isConfigured}`);
       if (isConfigured && !sortedProviders.includes(providerEm)) {
         sortedProviders.push(providerEm);
       }
@@ -85,9 +84,6 @@
     endpoint = endpoint.replace("{model-name}", model);
     if (providerEm === "gemini") {
       endpoint = `${endpoint}?key=${apiKey}`;
-    }
-    if (providerEm === "anthropic") {
-      endpoint = `${CORS_PROXY}/${endpoint}`;
     }
     return endpoint;
   }
@@ -1309,7 +1305,9 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       case "anthropic":
         return {
           ...baseHeaders,
-          "x-api-key": apiKey
+          "x-api-key": apiKey,
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01"
         };
       case "gemini":
         return baseHeaders;
@@ -1327,6 +1325,8 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         const systemMessage = messages.find((m) => m.role === "system");
         const nonSystemMessages = messages.filter((m) => m.role !== "system");
         body = {
+          "max_tokens": 4096,
+          // WBH confirmed Q4 2025 Anthropic requires explicit max_tokens. TBD if this is the best value
           model,
           messages: nonSystemMessages,
           stream
@@ -1745,7 +1745,6 @@ Will be utilized after your preliminary approval`,
         const settingKey = PROVIDER_SETTING_KEY_LABELS[optionSelected];
         await app.setSetting(settingKey, apiKey.trim());
         app.settings[settingKey] = apiKey.trim();
-        console.log(`Saved API key for "${optionSelected}" in setting ${settingKey} app.settings`, app.settings, `Setting for key is "${app.settings[settingKey]}"`);
         return await promptForProviderPrecedence(app);
       } else {
         console.debug(`User entered invalid ${optionSelected} key`);
