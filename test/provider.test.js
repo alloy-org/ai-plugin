@@ -1,6 +1,5 @@
-import { ADD_PROVIDER_API_KEY_LABEL, AI_MODEL_LABEL, PROVIDER_SETTING_KEY_LABELS } from "../lib/constants/settings"
-import { MIN_API_KEY_CHARACTERS, PROVIDER_DEFAULT_MODEL, REMOTE_AI_PROVIDER_EMS } from "../lib/constants/provider"
-import { jest } from "@jest/globals"
+import { ADD_PROVIDER_API_KEY_LABEL, AI_MODEL_LABEL, PROVIDER_SETTING_KEY_LABELS } from "constants/settings"
+import { MIN_API_KEY_CHARACTERS, PROVIDER_DEFAULT_MODEL, REMOTE_AI_PROVIDER_EMS } from "constants/provider"
 import { mockApp, mockPlugin } from "./test-helpers"
 
 // --------------------------------------------------------------------------------------

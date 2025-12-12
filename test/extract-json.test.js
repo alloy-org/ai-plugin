@@ -1,4 +1,4 @@
-import { extractJsonFromString } from "../lib/fetch-json"
+import { extractJsonFromString } from "providers/fetch-json"
 
 // --------------------------------------------------------------------------------------
 describe("Observed AI responses", () => {

@@ -9,7 +9,11 @@
     "skipLibCheck": true,
     "strict": false,
     "resolveJsonModule": true,
-    "allowSyntheticDefaultImports": true
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "*": ["lib/*"]
+    }
   },
   "include": ["lib/**/*", "test/**/*"],
   "exclude": ["node_modules"]

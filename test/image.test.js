@@ -1,7 +1,7 @@
 import { jest } from "@jest/globals"
-import { IMAGE_GENERATION_PROMPT } from "../lib/constants/prompt-strings"
-import { IMAGE_FROM_PRECEDING_LABEL, IMAGE_FROM_PROMPT_LABEL } from "../lib/constants/settings"
-import { DALL_E_DEFAULT, DALL_E_TEST_DEFAULT } from "../lib/constants/provider"
+import { IMAGE_GENERATION_PROMPT } from "constants/prompt-strings"
+import { IMAGE_FROM_PRECEDING_LABEL, IMAGE_FROM_PROMPT_LABEL } from "constants/settings"
+import { DALL_E_DEFAULT, DALL_E_TEST_DEFAULT } from "constants/provider"
 import { mockPlugin, mockApp, mockAppWithContent } from "./test-helpers.js"
 
 const AWAIT_TIME = 30000;

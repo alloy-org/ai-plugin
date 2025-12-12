@@ -1,5 +1,5 @@
-import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "../lib/constants/provider"
-import { AI_MODEL_LABEL } from "../lib/constants/settings"
+import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "constants/provider"
+import { AI_MODEL_LABEL } from "constants/settings"
 import { jest } from "@jest/globals"
 import { contentFromFileName, mockAlertAccept, mockAppWithContent, mockPlugin, providersWithApiKey } from "./test-helpers"
 

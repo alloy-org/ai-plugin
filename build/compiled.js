@@ -5,110 +5,11 @@
   var MAX_REALISTIC_THESAURUS_RHYME_WORDS = 4;
   var REJECTED_RESPONSE_PREFIX = "The following responses were rejected:\n";
 
-  // lib/constants/settings.js
-  function settingKeyLabel(providerEm) {
-    return PROVIDER_SETTING_KEY_LABELS[providerEm];
-  }
-  var ADD_PROVIDER_API_KEY_LABEL = "Add Provider API key";
-  var AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
-  var AI_MODEL_LABEL = "Preferred AI models (comma separated)";
-  var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
-  var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
-  var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
-  var MAX_SPACES_ABORT_RESPONSE = 30;
-  var SUGGEST_TASKS_LABEL = "Suggest tasks";
-  var PLUGIN_NAME = "AmpleAI";
-  var PROVIDER_SETTING_KEY_LABELS = {
-    anthropic: "Anthropic API Key",
-    deepseek: "DeepSeek API Key",
-    gemini: "Gemini API Key",
-    grok: "Grok API Key",
-    openai: "OpenAI API Key"
-    // perplexity: "Perplexity API Key",
-  };
-
   // lib/constants/units.js
   var KILOBYTE = 1024;
   var TOKEN_CHARACTERS = 4;
 
   // lib/constants/provider.js
-  function configuredProvidersSorted(appSettings, modelsSetting) {
-    const preferredModels = parsePreferredModels(modelsSetting);
-    const sortedProviders = [];
-    for (const model of preferredModels) {
-      const providerEm = providerFromModel(model);
-      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
-      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
-      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
-      if (isConfigured && !sortedProviders.includes(providerEm)) {
-        sortedProviders.push(providerEm);
-      }
-    }
-    for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
-      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
-      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
-      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
-      if (isConfigured && !sortedProviders.includes(providerEm)) {
-        sortedProviders.push(providerEm);
-      }
-    }
-    return sortedProviders;
-  }
-  function defaultProviderModel(providerEm) {
-    return PROVIDER_DEFAULT_MODEL[providerEm];
-  }
-  function openAiTokenLimit(model) {
-    return OPENAI_TOKEN_LIMITS[model];
-  }
-  function isModelOllama(model) {
-    return !remoteAiModels().includes(model);
-  }
-  function modelForProvider(modelsSetting, providerEm) {
-    const preferredModels = parsePreferredModels(modelsSetting);
-    const providerModels = MODELS_PER_PROVIDER[providerEm];
-    for (const model of preferredModels) {
-      if (providerModels && providerModels.includes(model)) {
-        return model;
-      }
-    }
-    return PROVIDER_DEFAULT_MODEL[providerEm];
-  }
-  function parsePreferredModels(modelsSetting) {
-    if (!modelsSetting || typeof modelsSetting !== "string")
-      return [];
-    return modelsSetting.split(",").map((m) => m.trim()).filter(Boolean);
-  }
-  function providerEndpointUrl(model, apiKey) {
-    const providerEm = providerFromModel(model);
-    let endpoint = PROVIDER_ENDPOINTS[providerEm];
-    endpoint = endpoint.replace("{model-name}", model);
-    if (providerEm === "gemini") {
-      endpoint = `${endpoint}?key=${apiKey}`;
-    }
-    return endpoint;
-  }
-  function providerFromModel(model) {
-    for (const [providerEm, models] of Object.entries(MODELS_PER_PROVIDER)) {
-      if (models.includes(model)) {
-        return providerEm;
-      }
-    }
-    throw new Error(`Model ${model} not found in any provider`);
-  }
-  function providerNameFromProviderEm(providerEm) {
-    const providerNames = {
-      anthropic: "Anthropic",
-      deepseek: "DeepSeek",
-      gemini: "Gemini",
-      grok: "Grok",
-      openai: "OpenAI",
-      perplexity: "Perplexity"
-    };
-    return providerNames[providerEm] || providerEm.charAt(0).toUpperCase() + providerEm.slice(1);
-  }
-  function remoteAiModels() {
-    return Object.values(MODELS_PER_PROVIDER).flat();
-  }
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
   var MIN_API_KEY_CHARACTERS = {
@@ -312,6 +213,141 @@ Your API key should start with "pplx-". Get your key here:
 ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   };
 
+  // lib/constants/settings.js
+  function settingKeyLabel(providerEm) {
+    return PROVIDER_SETTING_KEY_LABELS[providerEm];
+  }
+  var ADD_PROVIDER_API_KEY_LABEL = "Add Provider API key";
+  var AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
+  var AI_MODEL_LABEL = "Preferred AI models (comma separated)";
+  var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
+  var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
+  var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
+  var MAX_SPACES_ABORT_RESPONSE = 30;
+  var SEARCH_USING_AGENT_LABEL = "Search notes with AI";
+  var SUGGEST_TASKS_LABEL = "Suggest tasks";
+  var PLUGIN_NAME = "AmpleAI";
+  var PROVIDER_SETTING_KEY_LABELS = {
+    anthropic: "Anthropic API Key",
+    deepseek: "DeepSeek API Key",
+    gemini: "Gemini API Key",
+    grok: "Grok API Key",
+    openai: "OpenAI API Key"
+    // perplexity: "Perplexity API Key",
+  };
+
+  // lib/providers/ai-provider-settings.js
+  async function apiKeyFromAppOrUser(plugin2, app, providerEm) {
+    const apiKey = apiKeyFromApp(plugin2, app, providerEm) || await apiKeyFromUser(plugin2, app, providerEm);
+    if (!apiKey) {
+      app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
+      return null;
+    }
+    return apiKey;
+  }
+  function apiKeyFromApp(plugin2, app, providerEm) {
+    const providerKeyLabel = settingKeyLabel(providerEm);
+    if (app.settings[providerKeyLabel]) {
+      return app.settings[providerKeyLabel].trim();
+    } else if (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]) {
+      const deprecatedKey = (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]).trim();
+      app.setSetting(settingKeyLabel("openai"), deprecatedKey);
+      return deprecatedKey;
+    } else {
+      if (plugin2.constants.isTestEnvironment) {
+        throw new Error(`Couldnt find a ${providerEm} key in ${app.settings}`);
+      } else {
+        app.alert("Please configure your OpenAI key in plugin settings.");
+      }
+      return null;
+    }
+  }
+  async function apiKeyFromUser(plugin2, app, providerEm) {
+    const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
+    if (apiKey) {
+      app.setSetting(settingKeyLabel(providerEm), apiKey);
+    }
+    return apiKey;
+  }
+  function configuredProvidersSorted(appSettings) {
+    const modelsSetting = appSettings[AI_MODEL_LABEL];
+    const preferredModels = parsePreferredModels(modelsSetting);
+    const sortedProviders = [];
+    for (const model of preferredModels) {
+      const providerEm = providerFromModel(model);
+      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
+      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
+      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
+      if (isConfigured && !sortedProviders.includes(providerEm)) {
+        sortedProviders.push(providerEm);
+      }
+    }
+    for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
+      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
+      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
+      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
+      if (isConfigured && !sortedProviders.includes(providerEm)) {
+        sortedProviders.push(providerEm);
+      }
+    }
+    return sortedProviders;
+  }
+  function defaultProviderModel(providerEm) {
+    return PROVIDER_DEFAULT_MODEL[providerEm];
+  }
+  function openAiTokenLimit(model) {
+    return OPENAI_TOKEN_LIMITS[model];
+  }
+  function isModelOllama(model) {
+    return !remoteAiModels().includes(model);
+  }
+  function modelForProvider(modelsSetting, providerEm) {
+    const preferredModels = parsePreferredModels(modelsSetting);
+    const providerModels = MODELS_PER_PROVIDER[providerEm];
+    for (const model of preferredModels) {
+      if (providerModels && providerModels.includes(model)) {
+        return model;
+      }
+    }
+    return PROVIDER_DEFAULT_MODEL[providerEm];
+  }
+  function parsePreferredModels(modelsSetting) {
+    if (!modelsSetting || typeof modelsSetting !== "string")
+      return [];
+    return modelsSetting.split(",").map((m) => m.trim()).filter(Boolean);
+  }
+  function providerEndpointUrl(model, apiKey) {
+    const providerEm = providerFromModel(model);
+    let endpoint = PROVIDER_ENDPOINTS[providerEm];
+    endpoint = endpoint.replace("{model-name}", model);
+    if (providerEm === "gemini") {
+      endpoint = `${endpoint}?key=${apiKey}`;
+    }
+    return endpoint;
+  }
+  function providerFromModel(model) {
+    for (const [providerEm, models] of Object.entries(MODELS_PER_PROVIDER)) {
+      if (models.includes(model)) {
+        return providerEm;
+      }
+    }
+    throw new Error(`Model ${model} not found in any provider`);
+  }
+  function providerNameFromProviderEm(providerEm) {
+    const providerNames = {
+      anthropic: "Anthropic",
+      deepseek: "DeepSeek",
+      gemini: "Gemini",
+      grok: "Grok",
+      openai: "OpenAI",
+      perplexity: "Perplexity"
+    };
+    return providerNames[providerEm] || providerEm.charAt(0).toUpperCase() + providerEm.slice(1);
+  }
+  function remoteAiModels() {
+    return Object.values(MODELS_PER_PROVIDER).flat();
+  }
+
   // lib/prompt-api-params.js
   function isJsonPrompt(promptKey) {
     return !!["rhyming", "thesaurus", "sortGroceriesJson", "suggestTasks"].find((key) => key === promptKey);
@@ -338,7 +374,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     }
   }
 
-  // lib/util.js
+  // lib/app-util.js
   function truncate(text, limit) {
     return text.length > limit ? text.slice(0, limit) : text;
   }
@@ -495,7 +531,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     return null;
   }
 
-  // lib/fetch-json.js
+  // lib/providers/fetch-json.js
   var streamTimeoutSeconds = 2;
   function shouldStream(plugin2) {
     return !plugin2.constants.isTestEnvironment || plugin2.constants.streamTest;
@@ -803,7 +839,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     return path;
   }
 
-  // lib/fetch-ollama.js
+  // lib/providers/fetch-ollama.js
   async function callOllama(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     const stream = shouldStream(plugin2);
     const jsonEndpoint = isJsonPrompt(promptKey);
@@ -1201,7 +1237,7 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     return contentIndex;
   }
 
-  // lib/openai-functions.js
+  // lib/providers/openai-functions.js
   function toolsValueFromPrompt(promptKey) {
     let openaiFunction;
     switch (promptKey) {
@@ -1236,41 +1272,7 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     }
   }
 
-  // lib/ai-provider-settings.js
-  async function apiKeyFromAppOrUser(plugin2, app, providerEm) {
-    const apiKey = apiKeyFromApp(plugin2, app, providerEm) || await apiKeyFromUser(plugin2, app, providerEm);
-    if (!apiKey) {
-      app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
-      return null;
-    }
-    return apiKey;
-  }
-  function apiKeyFromApp(plugin2, app, providerEm) {
-    const providerKeyLabel = settingKeyLabel(providerEm);
-    if (app.settings[providerKeyLabel]) {
-      return app.settings[providerKeyLabel].trim();
-    } else if (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]) {
-      const deprecatedKey = (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]).trim();
-      app.setSetting(settingKeyLabel("openai"), deprecatedKey);
-      return deprecatedKey;
-    } else {
-      if (plugin2.constants.isTestEnvironment) {
-        throw new Error(`Couldnt find a ${providerEm} key in ${app.settings}`);
-      } else {
-        app.alert("Please configure your OpenAI key in plugin settings.");
-      }
-      return null;
-    }
-  }
-  async function apiKeyFromUser(plugin2, app, providerEm) {
-    const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
-    if (apiKey) {
-      app.setSetting(settingKeyLabel(providerEm), apiKey);
-    }
-    return apiKey;
-  }
-
-  // lib/fetch-ai-provider.js
+  // lib/providers/fetch-ai-provider.js
   async function callRemoteAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     const providerEm = providerFromModel(model);
     model = model?.trim()?.length ? model : defaultProviderModel(providerEm);
@@ -1713,7 +1715,7 @@ Will be utilized after your preliminary approval`,
       { label: "DeepSeek: Chinese model good for deep thinking", value: "deepseek" },
       { label: "Ollama: best for experts who want high customization, or a free option", value: "ollama" }
     ];
-    const sortedConfiguredProviderEms = configuredProvidersSorted(app.settings, app.settings[AI_MODEL_LABEL]);
+    const sortedConfiguredProviderEms = configuredProvidersSorted(app.settings);
     const configuredProviderNames = sortedConfiguredProviderEms.map((providerEm) => providerNameFromProviderEm(providerEm));
     for (const option of providerOptions) {
       if (option.value !== "ollama" && sortedConfiguredProviderEms.includes(option.value)) {
@@ -1775,7 +1777,7 @@ Will be utilized after your preliminary approval`,
     return candidateAiModels;
   }
   async function promptForProviderPrecedence(app) {
-    const configuredProviderEms = configuredProvidersSorted(app.settings, app.settings[AI_MODEL_LABEL]);
+    const configuredProviderEms = configuredProvidersSorted(app.settings);
     console.log("Found configuredProviderEms", configuredProviderEms, "from settings", app.settings[AI_MODEL_LABEL]);
     if (configuredProviderEms.length === 0)
       return [];
@@ -2040,6 +2042,495 @@ Will be utilized after your preliminary approval`,
     });
   }
 
+  // lib/functions/search-agent.js
+  var SearchAgent = class {
+    // --------------------------------------------------------------------------
+    constructor(app, llmProvider) {
+      this.app = app;
+      this.llm = llmProvider;
+      this.retryCount = 0;
+      this.maxRetries = 2;
+      this.progressCallback = null;
+    }
+    // --------------------------------------------------------------------------
+    // Main search entry point
+    // @param {string} userQuery - The search query (50-5000 words)
+    // @param {Object} options - Optional overrides
+    // @returns {Promise<SearchResult>}
+    async search(userQuery, options = {}) {
+      try {
+        this.emitProgress("Starting search analysis...");
+        const criteria = await this.phase1_analyzeQuery(userQuery, options);
+        const candidates = await this.phase2_collectCandidates(criteria);
+        if (candidates.length === 0) {
+          return this.handleNoResults(criteria);
+        }
+        const analyzedCandidates = await this.phase3_deepAnalysis(candidates, criteria);
+        if (analyzedCandidates.length === 0 && this.retryCount < this.maxRetries) {
+          return this.retryWithBroaderCriteria(userQuery, criteria);
+        }
+        const rankedNotes = await this.phase4_scoreAndRank(analyzedCandidates, criteria, userQuery);
+        const finalResult = await this.phase5_sanityCheck(rankedNotes, criteria, userQuery);
+        return finalResult;
+      } catch (error) {
+        console.error("Search agent error:", error);
+        return {
+          found: false,
+          error: error.message,
+          suggestions: []
+        };
+      }
+    }
+    // --------------------------------------------------------------------------
+    // Phase 1: Extract structured search criteria from natural language
+    async phase1_analyzeQuery(userQuery, options) {
+      this.emitProgress("Phase 1: Analyzing query...");
+      const analysisPrompt = `
+Analyze this note search query and extract structured search criteria.
+
+User Query: "${userQuery}"
+
+Extract:
+1. PRIMARY_KEYWORDS: 3-5 words most likely to appear in the note TITLE
+2. SECONDARY_KEYWORDS: 5-10 additional words likely in note content
+3. EXACT_PHRASE: If user wants exact text match, extract it (or null)
+4. CRITERIA:
+   - containsPDF: Does user want notes with PDF attachments?
+   - containsImage: Does user want notes with images?
+   - containsURL: Does user want notes with web links?
+5. DATE_FILTER:
+   - type: "created" or "updated" (or null if no date mentioned)
+   - after: ISO date string (YYYY-MM-DD) for earliest date
+6. TAG_REQUIREMENT:
+   - mustHave: Tag that MUST be present (null if none required)
+   - preferred: Tag that"s PREFERRED but not required (null if none)
+7. RESULT_COUNT: 1 for single best match, or N for top N results
+
+Return ONLY valid JSON:
+{
+  "primaryKeywords": ["word1", "word2"],
+  "secondaryKeywords": ["word3", "word4", "word5"],
+  "exactPhrase": null,
+  "criteria": {
+    "containsPDF": false,
+    "containsImage": false,
+    "containsURL": false
+  },
+  "dateFilter": null,
+  "tagRequirement": {
+    "mustHave": null,
+    "preferred": null
+  },
+  "resultCount": 1
+}
+`;
+      const extracted = await this.llm(analysisPrompt);
+      return {
+        ...extracted,
+        ...options,
+        criteria: { ...extracted.criteria, ...options.criteria },
+        tagRequirement: { ...extracted.tagRequirement, ...options.tagRequirement }
+      };
+    }
+    // --------------------------------------------------------------------------
+    // Phase 2: Collect candidate notes using fast API calls
+    async phase2_collectCandidates(criteria) {
+      this.emitProgress("Phase 2: Filtering candidates...");
+      const { primaryKeywords, secondaryKeywords, exactPhrase, dateFilter, tagRequirement } = criteria;
+      let titleCandidates = [];
+      if (primaryKeywords.length > 0) {
+        const titleQuery = primaryKeywords.join(" ");
+        titleCandidates = await this.app.filterNotes({
+          query: titleQuery,
+          tag: tagRequirement.mustHave || void 0
+        });
+        console.log(`Title search for "${titleQuery}": ${titleCandidates.length} results`);
+      }
+      let candidates = titleCandidates;
+      const needsContentSearch = titleCandidates.length < 5 || exactPhrase || criteria.criteria.containsPDF || criteria.criteria.containsImage;
+      if (needsContentSearch) {
+        const contentQuery = exactPhrase || [...primaryKeywords, ...secondaryKeywords.slice(0, 3)].join(" ");
+        const contentCandidates = await this.app.searchNotes(contentQuery);
+        console.log(`Content search for "${contentQuery}": ${contentCandidates.length} results`);
+        candidates = this.mergeCandidates(titleCandidates, contentCandidates);
+      }
+      if (dateFilter) {
+        const dateField = dateFilter.type === "created" ? "created" : "updated";
+        const afterDate = new Date(dateFilter.after);
+        candidates = candidates.filter((note) => {
+          const noteDate = new Date(note[dateField]);
+          return noteDate >= afterDate;
+        });
+        console.log(`After date filter: ${candidates.length} candidates`);
+      }
+      if (candidates.length > 0) {
+        const tagFrequency = this.analyzeTagFrequency(candidates);
+        candidates = candidates.map((note) => {
+          let tagBoost = 1;
+          if (tagRequirement.preferred && note.tags) {
+            const hasPreferredTag = note.tags.some(
+              (tag) => tag === tagRequirement.preferred || tag.startsWith(tagRequirement.preferred + "/")
+            );
+            if (hasPreferredTag)
+              tagBoost = 1.5;
+          }
+          return { ...note, _tagBoost: tagBoost };
+        });
+      }
+      this.emitProgress(`Found ${candidates.length} candidate notes`);
+      return candidates;
+    }
+    // --------------------------------------------------------------------------
+    // Phase 3: Deep analysis of top candidates only
+    async phase3_deepAnalysis(candidates, criteria) {
+      this.emitProgress("Phase 3: Analyzing top candidates...");
+      const preliminaryRanked = this.rankPreliminary(candidates, criteria);
+      const topN = Math.min(8, preliminaryRanked.length);
+      const topCandidates = preliminaryRanked.slice(0, topN);
+      console.log(`Deep analyzing top ${topN} of ${candidates.length} candidates`);
+      const deepAnalysis = await this.parallelLimit(
+        topCandidates.map((note) => () => this.analyzeNoteDeep(note, criteria)),
+        5
+        // Max 5 concurrent API calls
+      );
+      const validCandidates = deepAnalysis.filter((analysis) => {
+        const { checks } = analysis;
+        if (criteria.criteria.containsPDF && !checks.hasPDF)
+          return false;
+        if (criteria.criteria.containsImage && !checks.hasImage)
+          return false;
+        if (criteria.exactPhrase && !checks.hasExactPhrase)
+          return false;
+        if (criteria.criteria.containsURL && !checks.hasURL)
+          return false;
+        return true;
+      });
+      console.log(`${validCandidates.length} candidates passed criteria checks`);
+      this.emitProgress(`${validCandidates.length} notes match all criteria`);
+      return validCandidates;
+    }
+    // --------------------------------------------------------------------------
+    // Deep analyze a single note
+    async analyzeNoteDeep(note, criteria) {
+      const checks = {};
+      let content = null;
+      const needAttachments = criteria.criteria.containsPDF;
+      const needImages = criteria.criteria.containsImage;
+      const needContent = criteria.exactPhrase || criteria.criteria.containsURL;
+      const fetches = [];
+      if (needAttachments) {
+        fetches.push(
+          this.app.notes.find(note.uuid).then((n) => n.attachments()).then((attachments) => {
+            checks.hasPDF = attachments.some(
+              (a) => a.type === "application/pdf" || a.name.endsWith(".pdf")
+            );
+            checks.attachmentCount = attachments.length;
+          })
+        );
+      }
+      if (needImages) {
+        fetches.push(
+          this.app.notes.find(note.uuid).then((n) => n.images()).then((images) => {
+            checks.hasImage = images.length > 0;
+            checks.imageCount = images.length;
+          })
+        );
+      }
+      if (needContent) {
+        fetches.push(
+          this.app.notes.find(note.uuid).then((n) => n.content()).then((noteContent) => {
+            content = noteContent;
+            if (criteria.exactPhrase) {
+              checks.hasExactPhrase = noteContent.includes(criteria.exactPhrase);
+            }
+            if (criteria.criteria.containsURL) {
+              checks.hasURL = /https?:\/\/[^\s]+/.test(noteContent);
+              const urls = noteContent.match(/https?:\/\/[^\s]+/g);
+              checks.urlCount = urls ? urls.length : 0;
+            }
+          })
+        );
+      }
+      await Promise.all(fetches);
+      return {
+        note,
+        content: needContent ? content : null,
+        contentPreview: content ? content.substring(0, 500) : null,
+        checks
+      };
+    }
+    // --------------------------------------------------------------------------
+    // Phase 4: Score and rank candidates using LLM
+    async phase4_scoreAndRank(analyzedCandidates, criteria, userQuery) {
+      this.emitProgress("Phase 4: Ranking results...");
+      const scoringPrompt = `
+You are scoring note search results. Original query: "${userQuery}"
+
+Extracted criteria:
+${JSON.stringify(criteria, null, 2)}
+
+Score each candidate note 0-10 on these dimensions:
+1. TITLE_RELEVANCE: How well does the note title match the search intent?
+2. KEYWORD_DENSITY: How concentrated are the keywords in the content?
+3. CRITERIA_MATCH: Does it meet all the hard requirements (PDF/image/URL/exact phrase)?
+4. TAG_ALIGNMENT: Does it have relevant or preferred tags?
+5. RECENCY: Is it recent enough (if recency matters)?
+
+Candidates to score:
+${analyzedCandidates.map((candidate, index) => `
+${index}. "${candidate.note.name}"
+   UUID: ${candidate.note.uuid}
+   Tags: ${candidate.note.tags?.join(", ") || "none"}
+   Updated: ${candidate.note.updated}
+   ${candidate.contentPreview ? `Content preview: ${candidate.contentPreview}` : "No content fetched"}
+   Checks: ${JSON.stringify(candidate.checks)}
+`).join("\n")}
+
+Return ONLY valid JSON array:
+[
+  {
+    "noteIndex": 0,
+    "titleRelevance": 8,
+    "keywordDensity": 7,
+    "criteriaMatch": 10,
+    "tagAlignment": 6,
+    "recency": 5,
+    "reasoning": "Brief explanation of why this note matches"
+  }
+]
+`;
+      const scores = await this.llm(scoringPrompt);
+      const weights = {
+        titleRelevance: 0.3,
+        keywordDensity: 0.25,
+        criteriaMatch: 0.2,
+        tagAlignment: 0.15,
+        recency: 0.1
+      };
+      const rankedNotes = scores.map((score) => {
+        const finalScore = score.titleRelevance * weights.titleRelevance + score.keywordDensity * weights.keywordDensity + score.criteriaMatch * weights.criteriaMatch + score.tagAlignment * weights.tagAlignment + score.recency * weights.recency;
+        return {
+          note: analyzedCandidates[score.noteIndex].note,
+          finalScore: Math.round(finalScore * 10) / 10,
+          // Round to 1 decimal
+          scoreBreakdown: score,
+          checks: analyzedCandidates[score.noteIndex].checks
+        };
+      }).sort((a, b) => b.finalScore - a.finalScore);
+      return rankedNotes;
+    }
+    // --------------------------------------------------------------------------
+    // Phase 5: Sanity check and potential retry
+    async phase5_sanityCheck(rankedNotes, criteria, userQuery) {
+      this.emitProgress("Phase 5: Verifying results...");
+      if (rankedNotes.length === 0) {
+        return this.handleNoResults(criteria);
+      }
+      const topResult = rankedNotes[0];
+      if (topResult.finalScore >= 9.5) {
+        this.emitProgress("Found excellent match!");
+        return this.formatResult(rankedNotes, criteria.resultCount);
+      }
+      const sanityPrompt = `
+Original query: "${userQuery}"
+
+Top recommended note:
+- Title: "${topResult.note.name}"
+- Score: ${topResult.finalScore}/10
+- Tags: ${topResult.note.tags?.join(", ") || "none"}
+- Reasoning: ${topResult.scoreBreakdown.reasoning}
+
+Does this genuinely seem like what the user is looking for?
+
+Consider:
+1. Does the title make sense given the query?
+2. Is the score reasonable (>6.0 suggests good match)?
+3. Are there obvious mismatches?
+
+Return ONLY valid JSON:
+{
+  "confident": true,
+  "concerns": null,
+  "suggestAction": "accept"
+}
+
+Or if not confident:
+{
+  "confident": false,
+  "concerns": "Explanation of concern",
+  "suggestAction": "retry_broader" | "retry_narrower" | "insufficient_data"
+}
+`;
+      const sanityCheck = await this.llm(sanityPrompt);
+      if (sanityCheck.confident || this.retryCount >= this.maxRetries) {
+        this.emitProgress("Search complete!");
+        return this.formatResult(rankedNotes, criteria.resultCount);
+      }
+      console.log(`Sanity check failed: ${sanityCheck.concerns}`);
+      this.retryCount++;
+      if (sanityCheck.suggestAction === "retry_broader") {
+        return this.retryWithBroaderCriteria(userQuery, criteria);
+      } else if (sanityCheck.suggestAction === "insufficient_data") {
+        return {
+          found: false,
+          message: "No notes found matching your criteria",
+          suggestions: rankedNotes.slice(0, 3).map((r) => ({
+            note: r.note,
+            score: r.finalScore,
+            reason: "Close match but doesn't fully meet criteria"
+          }))
+        };
+      }
+      return this.formatResult(rankedNotes, criteria.resultCount);
+    }
+    // --------------------------------------------------------------------------
+    formatResult(rankedNotes, resultCount) {
+      if (resultCount === 1) {
+        const best = rankedNotes[0];
+        return {
+          found: true,
+          note: {
+            uuid: best.note.uuid,
+            name: best.note.name,
+            url: `amplenote://note/${best.note.uuid}`,
+            tags: best.note.tags || [],
+            updated: best.note.updated,
+            created: best.note.created
+          },
+          confidence: best.finalScore,
+          matchDetails: {
+            titleRelevance: best.scoreBreakdown.titleRelevance,
+            reasoning: best.scoreBreakdown.reasoning,
+            checks: best.checks
+          },
+          scoreBreakdown: best.scoreBreakdown
+        };
+      } else {
+        return {
+          found: true,
+          count: Math.min(resultCount, rankedNotes.length),
+          notes: rankedNotes.slice(0, resultCount).map((r, i) => ({
+            rank: i + 1,
+            score: r.finalScore,
+            note: {
+              uuid: r.note.uuid,
+              name: r.note.name,
+              url: `amplenote://note/${r.note.uuid}`,
+              tags: r.note.tags || [],
+              updated: r.note.updated
+            },
+            reasoning: r.scoreBreakdown.reasoning,
+            checks: r.checks
+          }))
+        };
+      }
+    }
+    // --------------------------------------------------------------------------
+    // Helper: Preliminary ranking without LLM
+    rankPreliminary(candidates, criteria) {
+      return candidates.map((note) => {
+        let score = 0;
+        const titleLower = (note.name || "").toLowerCase();
+        criteria.primaryKeywords.forEach((kw) => {
+          if (titleLower.includes(kw.toLowerCase())) {
+            score += 10;
+          }
+        });
+        criteria.secondaryKeywords.slice(0, 3).forEach((kw) => {
+          if (titleLower.includes(kw.toLowerCase())) {
+            score += 3;
+          }
+        });
+        score += (note._tagBoost || 1) * 5;
+        if (criteria.dateFilter) {
+          const daysSinceUpdate = (Date.now() - new Date(note.updated)) / (1e3 * 60 * 60 * 24);
+          score += Math.max(0, 5 - daysSinceUpdate / 30);
+        }
+        return { note, preliminaryScore: score };
+      }).sort((a, b) => b.preliminaryScore - a.preliminaryScore).map((item) => item.note);
+    }
+    // --------------------------------------------------------------------------
+    mergeCandidates(list1, list2) {
+      const uuidSet = new Set(list1.map((n) => n.uuid));
+      const unique = list2.filter((n) => !uuidSet.has(n.uuid));
+      return [...list1, ...unique];
+    }
+    // --------------------------------------------------------------------------
+    // Helper: Analyze tag frequency in candidates
+    analyzeTagFrequency(candidates) {
+      const frequency = {};
+      candidates.forEach((note) => {
+        (note.tags || []).forEach((tag) => {
+          frequency[tag] = (frequency[tag] || 0) + 1;
+        });
+      });
+      return frequency;
+    }
+    // --------------------------------------------------------------------------
+    // Helper: Parallel execution with concurrency limit
+    async parallelLimit(tasks, limit) {
+      const results = [];
+      const executing = [];
+      for (const task of tasks) {
+        const promise = task().then((result) => {
+          executing.splice(executing.indexOf(promise), 1);
+          return result;
+        });
+        results.push(promise);
+        executing.push(promise);
+        if (executing.length >= limit) {
+          await Promise.race(executing);
+        }
+      }
+      return Promise.all(results);
+    }
+    // --------------------------------------------------------------------------
+    // Retry with broader search criteria
+    async retryWithBroaderCriteria(userQuery, originalCriteria) {
+      console.log("Retrying with broader criteria...");
+      this.emitProgress("Broadening search criteria...");
+      const broaderCriteria = {
+        ...originalCriteria,
+        primaryKeywords: [
+          ...originalCriteria.primaryKeywords,
+          ...originalCriteria.secondaryKeywords.slice(0, 2)
+        ],
+        tagRequirement: {
+          mustHave: null,
+          // Remove hard tag requirement
+          preferred: originalCriteria.tagRequirement.mustHave || originalCriteria.tagRequirement.preferred
+        }
+      };
+      return this.search(userQuery, broaderCriteria);
+    }
+    // --------------------------------------------------------------------------
+    // Handle no results found
+    handleNoResults(criteria) {
+      return {
+        found: false,
+        message: "No notes found matching your criteria",
+        attemptedKeywords: criteria.primaryKeywords,
+        attemptedFilters: {
+          dateFilter: criteria.dateFilter,
+          tagRequirement: criteria.tagRequirement,
+          criteria: criteria.criteria
+        },
+        suggestion: "Try removing some filters or using broader search terms"
+      };
+    }
+    // --------------------------------------------------------------------------
+    emitProgress(message) {
+      console.log(`[SearchAgent] ${message}`);
+      if (this.progressCallback) {
+        this.progressCallback(message);
+      }
+    }
+    // --------------------------------------------------------------------------
+    onProgress(callback) {
+      this.progressCallback = callback;
+    }
+  };
+
   // lib/functions/suggest-tasks.js
   async function taskArrayFromSuggestions(plugin2, app, contentIndexText) {
     const allowResponse = (response2) => {
@@ -2204,6 +2695,10 @@ Preferred models are now set to "${preferredModels.join(`", "`)}".` : ""}`);
         } catch (error) {
           app.alert(noOllamaString);
         }
+      },
+      // --------------------------------------------------------------------------
+      [SEARCH_USING_AGENT_LABEL]: async function(app) {
+        const searchAgent = new SearchAgent(app);
       },
       // --------------------------------------------------------------------------
       "Show AI Usage by Model": async function(app) {
@@ -2503,5 +2998,4 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-  return plugin;
-})()
+})();

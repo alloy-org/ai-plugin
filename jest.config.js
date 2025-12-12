@@ -6,6 +6,8 @@ dotenv.config();
 export default {
   preset: 'ts-jest',
   testEnvironment: 'jsdom',
+  modulePaths: ['<rootDir>/lib'],
+  moduleDirectories: ['node_modules', '<rootDir>/lib'],
   moduleNameMapper: {
     '^(\\.{1,2}/.*)\\.js$': '$1',
   },

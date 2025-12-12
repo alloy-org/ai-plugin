@@ -1,5 +1,5 @@
-import { PROMPT_KEYS, promptsFromPromptKey } from "../lib/prompts"
-import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "../lib/constants/provider"
+import { PROMPT_KEYS, promptsFromPromptKey } from "prompts"
+import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "constants/provider"
 import { mockAppWithContent, mockPlugin } from "./test-helpers"
 
 const AWAIT_TIME = 20000;

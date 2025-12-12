@@ -1,8 +1,9 @@
-import { defaultProviderModel, PROVIDER_DEFAULT_MODEL_IN_TEST, openAiTokenLimit } from "../lib/constants/provider"
-import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "../lib/constants/prompt-strings"
-import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "../lib/constants/settings"
-import { ollamaAvailableModels } from "../lib/fetch-ollama"
 import { jest } from "@jest/globals"
+import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "constants/prompt-strings"
+import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "constants/provider"
+import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "constants/settings"
+import { ollamaAvailableModels } from "providers/fetch-ollama"
+import { defaultProviderModel, openAiTokenLimit } from "providers/ai-provider-settings"
 import { contentFromFileName, LOCAL_MODELS_RUNNING, mockAlertAccept, mockAppWithContent, mockPlugin, providersWithApiKey } from "./test-helpers"
 
 const AWAIT_TIME = 20000;
