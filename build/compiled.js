@@ -1,378 +1,18 @@
 (() => {
-  // lib/constants/functionality.js
-  var MAX_WORDS_TO_SHOW_RHYME = 4;
-  var MAX_WORDS_TO_SHOW_THESAURUS = 4;
-  var MAX_REALISTIC_THESAURUS_RHYME_WORDS = 4;
-  var REJECTED_RESPONSE_PREFIX = "The following responses were rejected:\n";
-
-  // lib/constants/units.js
-  var KILOBYTE = 1024;
-  var TOKEN_CHARACTERS = 4;
-
-  // lib/constants/provider.js
-  var DALL_E_DEFAULT = "1024x1024~dall-e-3";
-  var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
-  var MIN_API_KEY_CHARACTERS = {
-    anthropic: 80,
-    // sk-ant-api03- prefix + long string
-    deepseek: 40,
-    // Standard API key length
-    gemini: 30,
-    // AIza prefix + ~35 chars
-    grok: 40,
-    // xai- prefix + ~48 chars
-    openai: 50,
-    // sk- prefix + ~48 chars
-    perplexity: 40
-    // pplx- prefix + ~44 chars
+  var __defProp = Object.defineProperty;
+  var __getOwnPropNames = Object.getOwnPropertyNames;
+  var __defNormalProp = (obj, key, value) => key in obj ? __defProp(obj, key, { enumerable: true, configurable: true, writable: true, value }) : obj[key] = value;
+  var __esm = (fn, res) => function __init() {
+    return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
   };
-  var OLLAMA_URL = "http://localhost:11434";
-  var OLLAMA_TOKEN_CHARACTER_LIMIT = 2e4;
-  var OLLAMA_MODEL_PREFERENCES = [
-    "mistral",
-    "openhermes2.5-mistral",
-    "llama2"
-  ];
-  var PROVIDER_API_KEY_RETRIEVE_URL = {
-    anthropic: "https://console.anthropic.com/settings/keys",
-    deepseek: "https://platform.deepseek.com/api_keys",
-    gemini: "https://aistudio.google.com/app/api-keys",
-    grok: "https://console.x.ai/team/default/api-keys",
-    // Originally Claude thought it https://x.com/settings/grok/api-keys"
-    openai: "https://platform.openai.com/api-keys",
-    // https://platform.openai.com/docs/api-reference/authentication
-    perplexity: "https://www.perplexity.ai/account/api/keys"
+  var __export = (target, all) => {
+    for (var name in all)
+      __defProp(target, name, { get: all[name], enumerable: true });
   };
-  var PROVIDER_DEFAULT_MODEL = {
-    anthropic: "claude-sonnet-4-5",
-    deepseek: "deepseek-chat",
-    gemini: "gemini-2.5-flash",
-    grok: "grok-4-1-fast",
-    openai: "gpt-5.1",
-    perplexity: "sonar-pro"
+  var __publicField = (obj, key, value) => {
+    __defNormalProp(obj, typeof key !== "symbol" ? key + "" : key, value);
+    return value;
   };
-  var PROVIDER_ENDPOINTS = {
-    anthropic: "https://api.anthropic.com/v1/messages",
-    deepseek: "https://api.deepseek.com/v1/chat/completions",
-    gemini: "https://generativelanguage.googleapis.com/v1beta/models/{model-name}:generateContent",
-    grok: "https://api.x.ai/v1/chat/completions",
-    openai: "https://api.openai.com/v1/chat/completions",
-    // https://platform.openai.com/docs/api-reference/chat/create
-    perplexity: "https://api.perplexity.ai/chat/completions"
-  };
-  var REMOTE_AI_PROVIDER_EMS = Object.keys(PROVIDER_ENDPOINTS);
-  var ANTHROPIC_TOKEN_LIMITS = {
-    // Latest models (Claude 4.5 family)
-    "claude-sonnet-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-sonnet-4-5-20250929": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-haiku-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-haiku-4-5-20251001": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-opus-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-opus-4-5-20251101": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    // Legacy models (Claude 4 family)
-    "claude-opus-4-1": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-opus-4-1-20250805": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-sonnet-4-0": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-sonnet-4-20250514": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-3-7-sonnet-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-3-7-sonnet-20250219": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-opus-4-0": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-opus-4-20250514": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    // Legacy models (Claude 3.5 family)
-    "claude-3-5-haiku-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-3-5-haiku-20241022": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "claude-3-5-sonnet-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    // Legacy models (Claude 3 family)
-    "claude-3-haiku-20240307": 200 * KILOBYTE * TOKEN_CHARACTERS
-  };
-  var DEEPSEEK_TOKEN_LIMITS = {
-    "deepseek-chat": 64 * KILOBYTE * TOKEN_CHARACTERS,
-    "deepseek-reasoner": 64 * KILOBYTE * TOKEN_CHARACTERS,
-    "deepseek-r1": 64 * KILOBYTE * TOKEN_CHARACTERS,
-    "deepseek-r1-0528": 64 * KILOBYTE * TOKEN_CHARACTERS
-  };
-  var GEMINI_TOKEN_LIMITS = {
-    // Gemini 3 family (latest)
-    "gemini-3-pro": 1024 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-3-pro-preview": 1024 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-3-pro-image-preview": 64 * KILOBYTE * TOKEN_CHARACTERS,
-    // Gemini 2.5 family
-    "gemini-2.5-pro": 1024 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-2.5-flash": 1024 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-2.5-flash-lite": 1024 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-2.5-flash-lite-preview-06-17": 1024 * KILOBYTE * TOKEN_CHARACTERS,
-    // Gemini 2.0 family
-    "gemini-2.0-flash": 1024 * KILOBYTE * TOKEN_CHARACTERS,
-    "gemini-2.0-flash-lite": 1024 * KILOBYTE * TOKEN_CHARACTERS
-  };
-  var GROK_TOKEN_LIMITS = {
-    // Grok 4 family (latest)
-    "grok-4-1-fast": 2048 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-4-fast": 2048 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-4": 256 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-4-0709": 256 * KILOBYTE * TOKEN_CHARACTERS,
-    // Grok 3 family
-    "grok-3": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-3-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-3-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-3-mini-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    // Grok 2 family
-    "grok-2-vision-1212": 8 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-2-image-1212": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "grok-2-1212": 128 * KILOBYTE * TOKEN_CHARACTERS
-  };
-  var OPENAI_TOKEN_LIMITS = {
-    // GPT-5 family (latest)
-    "gpt-5": 400 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-5.1": 400 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-5.1-codex-max": 400 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-5-fast": 400 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-5-thinking": 400 * KILOBYTE * TOKEN_CHARACTERS,
-    // GPT-4.1 family
-    "gpt-4.1": 1e3 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4.1-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    // GPT-4o family
-    "gpt-4o": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4o-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    // O-series models
-    "o3": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "o3-mini": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "o3-pro": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "o4-mini": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    // Legacy GPT-4 models
-    "gpt-4": 8 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-1106-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-32k": 32 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-32k-0613": 32 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-4-vision-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    // Legacy GPT-3.5 models
-    "gpt-3.5": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo": 4 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-16k": 16 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-1106": 16 * KILOBYTE * TOKEN_CHARACTERS,
-    "gpt-3.5-turbo-instruct": 4 * KILOBYTE * TOKEN_CHARACTERS
-  };
-  var PERPLEXITY_TOKEN_LIMITS = {
-    "sonar-pro": 200 * KILOBYTE * TOKEN_CHARACTERS,
-    "sonar": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "sonar-reasoning-pro": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "sonar-reasoning": 128 * KILOBYTE * TOKEN_CHARACTERS,
-    "sonar-deep-research": 128 * KILOBYTE * TOKEN_CHARACTERS
-  };
-  var MODELS_PER_PROVIDER = {
-    anthropic: Object.keys(ANTHROPIC_TOKEN_LIMITS),
-    deepseek: Object.keys(DEEPSEEK_TOKEN_LIMITS),
-    gemini: Object.keys(GEMINI_TOKEN_LIMITS),
-    grok: Object.keys(GROK_TOKEN_LIMITS),
-    openai: Object.keys(OPENAI_TOKEN_LIMITS)
-    // perplexity: Object.keys(PERPLEXITY_TOKEN_LIMITS),
-  };
-
-  // lib/constants/prompt-strings.js
-  var APP_OPTION_VALUE_USE_PROMPT = "What would you like to do with this result?";
-  var IMAGE_GENERATION_PROMPT = "What would you like to generate an image of?";
-  var NO_MODEL_FOUND_TEXT = `No AI provider has been to setup.
-
-For casual-to-intermediate users, we recommend using OpenAI, Anthropic and Gemini, since all offers high quality results. OpenAI can generate images.`;
-  var OLLAMA_INSTALL_TEXT = `Rough installation instructions:
-1. Download Ollama: https://ollama.ai/download
-2. Install Ollama
-3. Install one or more LLMs that will fit within the RAM your computer (examples at https://github.com/jmorganca/ollama)
-4. Ensure that Ollama isn't already running, then start it in the console using "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"
-You can test whether Ollama is running by invoking Quick Open and running the "${LOOK_UP_OLLAMA_MODEL_ACTION_LABEL}" action`;
-  var OPENAI_API_KEY_URL = "https://platform.openai.com/account/api-keys";
-  var OPENAI_API_KEY_TEXT = `Paste your LLM API key in the field below.
-
-Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
-  var PROVIDER_INVALID_KEY_TEXT = "That doesn't seem to be a valid API key. You can enter one later in the settings for this plugin.";
-  var QUESTION_ANSWER_PROMPT = "What would you like to know?";
-  var PROVIDER_API_KEY_TEXT = {
-    anthropic: `Paste your Anthropic API key in the field below.
-
-Your API key should start with "sk-ant-api03-". Get your key here:
-${PROVIDER_API_KEY_RETRIEVE_URL.anthropic}`,
-    deepseek: `Paste your DeepSeek API key in the field below.
-
-Sign up for a DeepSeek account and get your API key here:
-${PROVIDER_API_KEY_RETRIEVE_URL.deepseek}`,
-    gemini: `Paste your Gemini API key in the field below.
-
-Your API key should start with "AIza". Get your key from Google AI Studio:
-${PROVIDER_API_KEY_RETRIEVE_URL.gemini}`,
-    grok: `Paste your Grok API key in the field below.
-
-Your API key should start with "xai-". Get your key from the xAI console:
-${PROVIDER_API_KEY_RETRIEVE_URL.grok}`,
-    openai: `Paste your OpenAI API key in the field below.
-
-Your API key should start with "sk-". Get your key here:
-${PROVIDER_API_KEY_RETRIEVE_URL.openai}`,
-    perplexity: `Paste your Perplexity API key in the field below.
-
-Your API key should start with "pplx-". Get your key here:
-${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
-  };
-
-  // lib/constants/settings.js
-  function settingKeyLabel(providerEm) {
-    return PROVIDER_SETTING_KEY_LABELS[providerEm];
-  }
-  var ADD_PROVIDER_API_KEY_LABEL = "Add Provider API key";
-  var AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
-  var AI_MODEL_LABEL = "Preferred AI models (comma separated)";
-  var CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
-  var IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
-  var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
-  var MAX_SPACES_ABORT_RESPONSE = 30;
-  var SEARCH_USING_AGENT_LABEL = "Search notes with AI";
-  var SUGGEST_TASKS_LABEL = "Suggest tasks";
-  var PLUGIN_NAME = "AmpleAI";
-  var PROVIDER_SETTING_KEY_LABELS = {
-    anthropic: "Anthropic API Key",
-    deepseek: "DeepSeek API Key",
-    gemini: "Gemini API Key",
-    grok: "Grok API Key",
-    openai: "OpenAI API Key"
-    // perplexity: "Perplexity API Key",
-  };
-
-  // lib/providers/ai-provider-settings.js
-  async function apiKeyFromAppOrUser(plugin2, app, providerEm) {
-    const apiKey = apiKeyFromApp(plugin2, app, providerEm) || await apiKeyFromUser(plugin2, app, providerEm);
-    if (!apiKey) {
-      app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
-      return null;
-    }
-    return apiKey;
-  }
-  function apiKeyFromApp(plugin2, app, providerEm) {
-    const providerKeyLabel = settingKeyLabel(providerEm);
-    if (app.settings[providerKeyLabel]) {
-      return app.settings[providerKeyLabel].trim();
-    } else if (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]) {
-      const deprecatedKey = (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]).trim();
-      app.setSetting(settingKeyLabel("openai"), deprecatedKey);
-      return deprecatedKey;
-    } else {
-      if (plugin2.constants.isTestEnvironment) {
-        throw new Error(`Couldnt find a ${providerEm} key in ${app.settings}`);
-      } else {
-        app.alert("Please configure your OpenAI key in plugin settings.");
-      }
-      return null;
-    }
-  }
-  async function apiKeyFromUser(plugin2, app, providerEm) {
-    const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
-    if (apiKey) {
-      app.setSetting(settingKeyLabel(providerEm), apiKey);
-    }
-    return apiKey;
-  }
-  function configuredProvidersSorted(appSettings) {
-    const modelsSetting = appSettings[AI_MODEL_LABEL];
-    const preferredModels = parsePreferredModels(modelsSetting);
-    const sortedProviders = [];
-    for (const model of preferredModels) {
-      const providerEm = providerFromModel(model);
-      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
-      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
-      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
-      if (isConfigured && !sortedProviders.includes(providerEm)) {
-        sortedProviders.push(providerEm);
-      }
-    }
-    for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
-      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
-      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
-      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
-      if (isConfigured && !sortedProviders.includes(providerEm)) {
-        sortedProviders.push(providerEm);
-      }
-    }
-    return sortedProviders;
-  }
-  function defaultProviderModel(providerEm) {
-    return PROVIDER_DEFAULT_MODEL[providerEm];
-  }
-  function openAiTokenLimit(model) {
-    return OPENAI_TOKEN_LIMITS[model];
-  }
-  function isModelOllama(model) {
-    return !remoteAiModels().includes(model);
-  }
-  function modelForProvider(modelsSetting, providerEm) {
-    const preferredModels = parsePreferredModels(modelsSetting);
-    const providerModels = MODELS_PER_PROVIDER[providerEm];
-    for (const model of preferredModels) {
-      if (providerModels && providerModels.includes(model)) {
-        return model;
-      }
-    }
-    return PROVIDER_DEFAULT_MODEL[providerEm];
-  }
-  function parsePreferredModels(modelsSetting) {
-    if (!modelsSetting || typeof modelsSetting !== "string")
-      return [];
-    return modelsSetting.split(",").map((m) => m.trim()).filter(Boolean);
-  }
-  function providerEndpointUrl(model, apiKey) {
-    const providerEm = providerFromModel(model);
-    let endpoint = PROVIDER_ENDPOINTS[providerEm];
-    endpoint = endpoint.replace("{model-name}", model);
-    if (providerEm === "gemini") {
-      endpoint = `${endpoint}?key=${apiKey}`;
-    }
-    return endpoint;
-  }
-  function providerFromModel(model) {
-    for (const [providerEm, models] of Object.entries(MODELS_PER_PROVIDER)) {
-      if (models.includes(model)) {
-        return providerEm;
-      }
-    }
-    throw new Error(`Model ${model} not found in any provider`);
-  }
-  function providerNameFromProviderEm(providerEm) {
-    const providerNames = {
-      anthropic: "Anthropic",
-      deepseek: "DeepSeek",
-      gemini: "Gemini",
-      grok: "Grok",
-      openai: "OpenAI",
-      perplexity: "Perplexity"
-    };
-    return providerNames[providerEm] || providerEm.charAt(0).toUpperCase() + providerEm.slice(1);
-  }
-  function remoteAiModels() {
-    return Object.values(MODELS_PER_PROVIDER).flat();
-  }
-
-  // lib/prompt-api-params.js
-  function isJsonPrompt(promptKey) {
-    return !!["rhyming", "thesaurus", "sortGroceriesJson", "suggestTasks"].find((key) => key === promptKey);
-  }
-  function useLongContentContext(promptKey) {
-    return ["continue", "insertTextComplete"].includes(promptKey);
-  }
-  function limitContextLines(aiModel, _promptKey) {
-    return !/(gpt-4|gpt-3)/.test(aiModel);
-  }
-  function tooDumbForExample(aiModel) {
-    const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
-    return !smartModel;
-  }
-  function frequencyPenaltyFromPromptKey(promptKey) {
-    if (["rhyming", "suggestTasks", "thesaurus"].find((key) => key === promptKey)) {
-      return 2;
-    } else if (["answer"].find((key) => key === promptKey)) {
-      return 1;
-    } else if (["revise", "sortGroceriesJson", "sortGroceriesText"].find((key) => key === promptKey)) {
-      return -1;
-    } else {
-      return 0;
-    }
-  }
 
   // lib/app-util.js
   function truncate(text, limit) {
@@ -530,9 +170,442 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     }
     return null;
   }
+  var init_app_util = __esm({
+    "lib/app-util.js"() {
+    }
+  });
+
+  // lib/constants/functionality.js
+  var MAX_WORDS_TO_SHOW_RHYME, MAX_WORDS_TO_SHOW_THESAURUS, MAX_REALISTIC_THESAURUS_RHYME_WORDS, REJECTED_RESPONSE_PREFIX;
+  var init_functionality = __esm({
+    "lib/constants/functionality.js"() {
+      MAX_WORDS_TO_SHOW_RHYME = 4;
+      MAX_WORDS_TO_SHOW_THESAURUS = 4;
+      MAX_REALISTIC_THESAURUS_RHYME_WORDS = 4;
+      REJECTED_RESPONSE_PREFIX = "The following responses were rejected:\n";
+    }
+  });
+
+  // lib/constants/units.js
+  var KILOBYTE, TOKEN_CHARACTERS;
+  var init_units = __esm({
+    "lib/constants/units.js"() {
+      KILOBYTE = 1024;
+      TOKEN_CHARACTERS = 4;
+    }
+  });
+
+  // lib/constants/provider.js
+  var DALL_E_DEFAULT, LOOK_UP_OLLAMA_MODEL_ACTION_LABEL, MIN_API_KEY_CHARACTERS, OLLAMA_URL, OLLAMA_TOKEN_CHARACTER_LIMIT, OLLAMA_MODEL_PREFERENCES, PROVIDER_API_KEY_RETRIEVE_URL, PROVIDER_DEFAULT_MODEL, PROVIDER_ENDPOINTS, REMOTE_AI_PROVIDER_EMS, ANTHROPIC_TOKEN_LIMITS, DEEPSEEK_TOKEN_LIMITS, GEMINI_TOKEN_LIMITS, GROK_TOKEN_LIMITS, OPENAI_TOKEN_LIMITS, PERPLEXITY_TOKEN_LIMITS, MODELS_PER_PROVIDER;
+  var init_provider = __esm({
+    "lib/constants/provider.js"() {
+      init_units();
+      DALL_E_DEFAULT = "1024x1024~dall-e-3";
+      LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
+      MIN_API_KEY_CHARACTERS = {
+        anthropic: 80,
+        // sk-ant-api03- prefix + long string
+        deepseek: 40,
+        // Standard API key length
+        gemini: 30,
+        // AIza prefix + ~35 chars
+        grok: 40,
+        // xai- prefix + ~48 chars
+        openai: 50,
+        // sk- prefix + ~48 chars
+        perplexity: 40
+        // pplx- prefix + ~44 chars
+      };
+      OLLAMA_URL = "http://localhost:11434";
+      OLLAMA_TOKEN_CHARACTER_LIMIT = 2e4;
+      OLLAMA_MODEL_PREFERENCES = [
+        "mistral",
+        "openhermes2.5-mistral",
+        "llama2"
+      ];
+      PROVIDER_API_KEY_RETRIEVE_URL = {
+        anthropic: "https://console.anthropic.com/settings/keys",
+        deepseek: "https://platform.deepseek.com/api_keys",
+        gemini: "https://aistudio.google.com/app/api-keys",
+        grok: "https://console.x.ai/team/default/api-keys",
+        // Originally Claude thought it https://x.com/settings/grok/api-keys"
+        openai: "https://platform.openai.com/api-keys",
+        // https://platform.openai.com/docs/api-reference/authentication
+        perplexity: "https://www.perplexity.ai/account/api/keys"
+      };
+      PROVIDER_DEFAULT_MODEL = {
+        anthropic: "claude-sonnet-4-5",
+        deepseek: "deepseek-chat",
+        gemini: "gemini-2.5-flash",
+        grok: "grok-4-1-fast",
+        openai: "gpt-5.1",
+        perplexity: "sonar-pro"
+      };
+      PROVIDER_ENDPOINTS = {
+        anthropic: "https://api.anthropic.com/v1/messages",
+        deepseek: "https://api.deepseek.com/v1/chat/completions",
+        gemini: "https://generativelanguage.googleapis.com/v1beta/models/{model-name}:generateContent",
+        grok: "https://api.x.ai/v1/chat/completions",
+        openai: "https://api.openai.com/v1/chat/completions",
+        // https://platform.openai.com/docs/api-reference/chat/create
+        perplexity: "https://api.perplexity.ai/chat/completions"
+      };
+      REMOTE_AI_PROVIDER_EMS = Object.keys(PROVIDER_ENDPOINTS);
+      ANTHROPIC_TOKEN_LIMITS = {
+        // Latest models (Claude 4.5 family)
+        "claude-sonnet-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-sonnet-4-5-20250929": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-haiku-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-haiku-4-5-20251001": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-opus-4-5": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-opus-4-5-20251101": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        // Legacy models (Claude 4 family)
+        "claude-opus-4-1": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-opus-4-1-20250805": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-sonnet-4-0": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-sonnet-4-20250514": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-3-7-sonnet-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-3-7-sonnet-20250219": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-opus-4-0": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-opus-4-20250514": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        // Legacy models (Claude 3.5 family)
+        "claude-3-5-haiku-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-3-5-haiku-20241022": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "claude-3-5-sonnet-latest": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        // Legacy models (Claude 3 family)
+        "claude-3-haiku-20240307": 200 * KILOBYTE * TOKEN_CHARACTERS
+      };
+      DEEPSEEK_TOKEN_LIMITS = {
+        "deepseek-chat": 64 * KILOBYTE * TOKEN_CHARACTERS,
+        "deepseek-reasoner": 64 * KILOBYTE * TOKEN_CHARACTERS,
+        "deepseek-r1": 64 * KILOBYTE * TOKEN_CHARACTERS,
+        "deepseek-r1-0528": 64 * KILOBYTE * TOKEN_CHARACTERS
+      };
+      GEMINI_TOKEN_LIMITS = {
+        // Gemini 3 family (latest)
+        "gemini-3-pro": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+        "gemini-3-pro-preview": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+        "gemini-3-pro-image-preview": 64 * KILOBYTE * TOKEN_CHARACTERS,
+        // Gemini 2.5 family
+        "gemini-2.5-pro": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+        "gemini-2.5-flash": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+        "gemini-2.5-flash-lite": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+        "gemini-2.5-flash-lite-preview-06-17": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+        // Gemini 2.0 family
+        "gemini-2.0-flash": 1024 * KILOBYTE * TOKEN_CHARACTERS,
+        "gemini-2.0-flash-lite": 1024 * KILOBYTE * TOKEN_CHARACTERS
+      };
+      GROK_TOKEN_LIMITS = {
+        // Grok 4 family (latest)
+        "grok-4-1-fast": 2048 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-4-fast": 2048 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-4": 256 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-4-0709": 256 * KILOBYTE * TOKEN_CHARACTERS,
+        // Grok 3 family
+        "grok-3": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-3-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-3-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-3-mini-beta": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        // Grok 2 family
+        "grok-2-vision-1212": 8 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-2-image-1212": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "grok-2-1212": 128 * KILOBYTE * TOKEN_CHARACTERS
+      };
+      OPENAI_TOKEN_LIMITS = {
+        // GPT-5 family (latest)
+        "gpt-5": 400 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-5.1": 400 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-5.1-codex-max": 400 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-5-fast": 400 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-5-thinking": 400 * KILOBYTE * TOKEN_CHARACTERS,
+        // GPT-4.1 family
+        "gpt-4.1": 1e3 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-4.1-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        // GPT-4o family
+        "gpt-4o": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-4o-mini": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        // O-series models
+        "o3": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "o3-mini": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "o3-pro": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "o4-mini": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        // Legacy GPT-4 models
+        "gpt-4": 8 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-4-1106-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-4-32k": 32 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-4-32k-0613": 32 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-4-vision-preview": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        // Legacy GPT-3.5 models
+        "gpt-3.5": 4 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-3.5-turbo": 4 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-3.5-turbo-16k": 16 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-3.5-turbo-1106": 16 * KILOBYTE * TOKEN_CHARACTERS,
+        "gpt-3.5-turbo-instruct": 4 * KILOBYTE * TOKEN_CHARACTERS
+      };
+      PERPLEXITY_TOKEN_LIMITS = {
+        "sonar-pro": 200 * KILOBYTE * TOKEN_CHARACTERS,
+        "sonar": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "sonar-reasoning-pro": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "sonar-reasoning": 128 * KILOBYTE * TOKEN_CHARACTERS,
+        "sonar-deep-research": 128 * KILOBYTE * TOKEN_CHARACTERS
+      };
+      MODELS_PER_PROVIDER = {
+        anthropic: Object.keys(ANTHROPIC_TOKEN_LIMITS),
+        deepseek: Object.keys(DEEPSEEK_TOKEN_LIMITS),
+        gemini: Object.keys(GEMINI_TOKEN_LIMITS),
+        grok: Object.keys(GROK_TOKEN_LIMITS),
+        openai: Object.keys(OPENAI_TOKEN_LIMITS)
+        // perplexity: Object.keys(PERPLEXITY_TOKEN_LIMITS),
+      };
+    }
+  });
+
+  // lib/constants/prompt-strings.js
+  var APP_OPTION_VALUE_USE_PROMPT, IMAGE_GENERATION_PROMPT, NO_MODEL_FOUND_TEXT, OLLAMA_INSTALL_TEXT, OPENAI_API_KEY_URL, OPENAI_API_KEY_TEXT, PROVIDER_INVALID_KEY_TEXT, QUESTION_ANSWER_PROMPT, PROVIDER_API_KEY_TEXT;
+  var init_prompt_strings = __esm({
+    "lib/constants/prompt-strings.js"() {
+      init_provider();
+      APP_OPTION_VALUE_USE_PROMPT = "What would you like to do with this result?";
+      IMAGE_GENERATION_PROMPT = "What would you like to generate an image of?";
+      NO_MODEL_FOUND_TEXT = `No AI provider has been to setup.
+
+For casual-to-intermediate users, we recommend using OpenAI, Anthropic and Gemini, since all offers high quality results. OpenAI can generate images.`;
+      OLLAMA_INSTALL_TEXT = `Rough installation instructions:
+1. Download Ollama: https://ollama.ai/download
+2. Install Ollama
+3. Install one or more LLMs that will fit within the RAM your computer (examples at https://github.com/jmorganca/ollama)
+4. Ensure that Ollama isn't already running, then start it in the console using "OLLAMA_ORIGINS=https://plugins.amplenote.com ollama serve"
+You can test whether Ollama is running by invoking Quick Open and running the "${LOOK_UP_OLLAMA_MODEL_ACTION_LABEL}" action`;
+      OPENAI_API_KEY_URL = "https://platform.openai.com/account/api-keys";
+      OPENAI_API_KEY_TEXT = `Paste your LLM API key in the field below.
+
+Once you have an OpenAI account, get your key here: ${OPENAI_API_KEY_URL}`;
+      PROVIDER_INVALID_KEY_TEXT = "That doesn't seem to be a valid API key. You can enter one later in the settings for this plugin.";
+      QUESTION_ANSWER_PROMPT = "What would you like to know?";
+      PROVIDER_API_KEY_TEXT = {
+        anthropic: `Paste your Anthropic API key in the field below.
+
+Your API key should start with "sk-ant-api03-". Get your key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.anthropic}`,
+        deepseek: `Paste your DeepSeek API key in the field below.
+
+Sign up for a DeepSeek account and get your API key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.deepseek}`,
+        gemini: `Paste your Gemini API key in the field below.
+
+Your API key should start with "AIza". Get your key from Google AI Studio:
+${PROVIDER_API_KEY_RETRIEVE_URL.gemini}`,
+        grok: `Paste your Grok API key in the field below.
+
+Your API key should start with "xai-". Get your key from the xAI console:
+${PROVIDER_API_KEY_RETRIEVE_URL.grok}`,
+        openai: `Paste your OpenAI API key in the field below.
+
+Your API key should start with "sk-". Get your key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.openai}`,
+        perplexity: `Paste your Perplexity API key in the field below.
+
+Your API key should start with "pplx-". Get your key here:
+${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
+      };
+    }
+  });
+
+  // lib/constants/settings.js
+  function settingKeyLabel(providerEm) {
+    return PROVIDER_SETTING_KEY_LABELS[providerEm];
+  }
+  var ADD_PROVIDER_API_KEY_LABEL, AI_LEGACY_MODEL_LABEL, AI_MODEL_LABEL, CORS_PROXY, IMAGE_FROM_PRECEDING_LABEL, IMAGE_FROM_PROMPT_LABEL, IS_TEST_ENVIRONMENT, MAX_SPACES_ABORT_RESPONSE, SEARCH_USING_AGENT_LABEL, SUGGEST_TASKS_LABEL, PLUGIN_NAME, PROVIDER_SETTING_KEY_LABELS;
+  var init_settings = __esm({
+    "lib/constants/settings.js"() {
+      ADD_PROVIDER_API_KEY_LABEL = "Add Provider API key";
+      AI_LEGACY_MODEL_LABEL = "Preferred AI model (e.g., 'gpt-4')";
+      AI_MODEL_LABEL = "Preferred AI models (comma separated)";
+      CORS_PROXY = "https://wispy-darkness-7716.amplenote.workers.dev";
+      IMAGE_FROM_PRECEDING_LABEL = "Image from preceding text";
+      IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
+      IS_TEST_ENVIRONMENT = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
+      MAX_SPACES_ABORT_RESPONSE = 30;
+      SEARCH_USING_AGENT_LABEL = "Search notes with AI";
+      SUGGEST_TASKS_LABEL = "Suggest tasks";
+      PLUGIN_NAME = "AmpleAI";
+      PROVIDER_SETTING_KEY_LABELS = {
+        anthropic: "Anthropic API Key",
+        deepseek: "DeepSeek API Key",
+        gemini: "Gemini API Key",
+        grok: "Grok API Key",
+        openai: "OpenAI API Key"
+        // perplexity: "Perplexity API Key",
+      };
+    }
+  });
+
+  // lib/providers/ai-provider-settings.js
+  async function apiKeyFromAppOrUser(app, providerEm) {
+    const apiKey = apiKeyFromApp(app, providerEm) || await apiKeyFromUser(app, providerEm);
+    if (!apiKey) {
+      app.alert("Couldn't find a valid OpenAI API key. An OpenAI account is necessary to generate images.");
+      return null;
+    }
+    return apiKey;
+  }
+  function apiKeyFromApp(app, providerEm) {
+    const providerKeyLabel = settingKeyLabel(providerEm);
+    if (app.settings[providerKeyLabel]) {
+      return app.settings[providerKeyLabel].trim();
+    } else if (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]) {
+      const deprecatedKey = (app.settings["API Key"] || app.settings[AI_LEGACY_MODEL_LABEL]).trim();
+      app.setSetting(settingKeyLabel("openai"), deprecatedKey);
+      return deprecatedKey;
+    } else {
+      if (IS_TEST_ENVIRONMENT) {
+        throw new Error(`Couldnt find a ${providerEm} key in ${app.settings}`);
+      } else {
+        app.alert("Please configure your OpenAI key in plugin settings.");
+      }
+      return null;
+    }
+  }
+  async function apiKeyFromUser(app, providerEm) {
+    const apiKey = await app.prompt(OPENAI_API_KEY_TEXT);
+    if (apiKey) {
+      app.setSetting(settingKeyLabel(providerEm), apiKey);
+    }
+    return apiKey;
+  }
+  function configuredProvidersSorted(appSettings) {
+    const modelsSetting = appSettings[AI_MODEL_LABEL];
+    const preferredModels2 = parsePreferredModels(modelsSetting);
+    const sortedProviders = [];
+    for (const model of preferredModels2) {
+      const providerEm = providerFromModel(model);
+      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
+      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
+      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
+      if (isConfigured && !sortedProviders.includes(providerEm)) {
+        sortedProviders.push(providerEm);
+      }
+    }
+    for (const providerEm of REMOTE_AI_PROVIDER_EMS) {
+      const settingKey = PROVIDER_SETTING_KEY_LABELS[providerEm];
+      const minKeyLength = MIN_API_KEY_CHARACTERS[providerEm];
+      const isConfigured = appSettings[settingKey]?.trim()?.length >= minKeyLength;
+      if (isConfigured && !sortedProviders.includes(providerEm)) {
+        sortedProviders.push(providerEm);
+      }
+    }
+    return sortedProviders;
+  }
+  function defaultProviderModel(providerEm) {
+    return PROVIDER_DEFAULT_MODEL[providerEm];
+  }
+  function openAiTokenLimit(model) {
+    return OPENAI_TOKEN_LIMITS[model];
+  }
+  function isModelOllama(model) {
+    return !remoteAiModels().includes(model);
+  }
+  function modelForProvider(modelsSetting, providerEm) {
+    const preferredModels2 = parsePreferredModels(modelsSetting);
+    const providerModels = MODELS_PER_PROVIDER[providerEm];
+    for (const model of preferredModels2) {
+      if (providerModels && providerModels.includes(model)) {
+        return model;
+      }
+    }
+    return PROVIDER_DEFAULT_MODEL[providerEm];
+  }
+  function parsePreferredModels(modelsSetting) {
+    if (!modelsSetting || typeof modelsSetting !== "string")
+      return [];
+    return modelsSetting.split(",").map((m) => m.trim()).filter(Boolean);
+  }
+  function preferredModel(app, lastUsedModel = null) {
+    const models = preferredModels(app);
+    if (lastUsedModel && models.includes(lastUsedModel)) {
+      return lastUsedModel;
+    }
+    return models?.at(0);
+  }
+  function preferredModels(app) {
+    if (!app || !app.settings)
+      return [];
+    const preferredModelsFromSetting = parsePreferredModels(app.settings[AI_MODEL_LABEL]);
+    if (preferredModelsFromSetting)
+      return preferredModelsFromSetting;
+    const providers = configuredProvidersSorted(app.settings);
+    return providers.map((providerEm) => PROVIDER_DEFAULT_MODEL[providerEm]);
+  }
+  function providerEndpointUrl(model, apiKey) {
+    const providerEm = providerFromModel(model);
+    let endpoint = PROVIDER_ENDPOINTS[providerEm];
+    endpoint = endpoint.replace("{model-name}", model);
+    if (providerEm === "gemini") {
+      endpoint = `${endpoint}?key=${apiKey}`;
+    }
+    return endpoint;
+  }
+  function providerFromModel(model) {
+    for (const [providerEm, models] of Object.entries(MODELS_PER_PROVIDER)) {
+      if (models.includes(model)) {
+        return providerEm;
+      }
+    }
+    throw new Error(`Model ${model} not found in any provider`);
+  }
+  function providerNameFromProviderEm(providerEm) {
+    const providerNames = {
+      anthropic: "Anthropic",
+      deepseek: "DeepSeek",
+      gemini: "Gemini",
+      grok: "Grok",
+      openai: "OpenAI",
+      perplexity: "Perplexity"
+    };
+    return providerNames[providerEm] || providerEm.charAt(0).toUpperCase() + providerEm.slice(1);
+  }
+  function remoteAiModels() {
+    return Object.values(MODELS_PER_PROVIDER).flat();
+  }
+  var init_ai_provider_settings = __esm({
+    "lib/providers/ai-provider-settings.js"() {
+      init_prompt_strings();
+      init_settings();
+      init_provider();
+    }
+  });
+
+  // lib/prompt-api-params.js
+  function isJsonPrompt(promptKey) {
+    return !!["rhyming", "thesaurus", "sortGroceriesJson", "suggestTasks"].find((key) => key === promptKey);
+  }
+  function useLongContentContext(promptKey) {
+    return ["continue", "insertTextComplete"].includes(promptKey);
+  }
+  function limitContextLines(aiModel, _promptKey) {
+    return !/(gpt-4|gpt-3)/.test(aiModel);
+  }
+  function tooDumbForExample(aiModel) {
+    const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
+    return !smartModel;
+  }
+  function frequencyPenaltyFromPromptKey(promptKey) {
+    if (["rhyming", "suggestTasks", "thesaurus"].find((key) => key === promptKey)) {
+      return 2;
+    } else if (["answer"].find((key) => key === promptKey)) {
+      return 1;
+    } else if (["revise", "sortGroceriesJson", "sortGroceriesText"].find((key) => key === promptKey)) {
+      return -1;
+    } else {
+      return 0;
+    }
+  }
+  var init_prompt_api_params = __esm({
+    "lib/prompt-api-params.js"() {
+    }
+  });
 
   // lib/providers/fetch-json.js
-  var streamTimeoutSeconds = 2;
   function shouldStream(plugin2) {
     return !plugin2.constants.isTestEnvironment || plugin2.constants.streamTest;
   }
@@ -838,8 +911,1249 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     path += deepSerialize(paramObject);
     return path;
   }
+  var streamTimeoutSeconds;
+  var init_fetch_json = __esm({
+    "lib/providers/fetch-json.js"() {
+      init_functionality();
+      init_ai_provider_settings();
+      init_settings();
+      init_prompt_api_params();
+      init_app_util();
+      streamTimeoutSeconds = 2;
+    }
+  });
+
+  // lib/providers/openai-functions.js
+  function toolsValueFromPrompt(promptKey) {
+    let openaiFunction;
+    switch (promptKey) {
+      case "rhyming":
+      case "thesaurus":
+        const description = promptKey === "rhyming" ? "Array of 10 contextually relevant rhyming words" : "Array of 10 contextually relevant alternate words";
+        openaiFunction = {
+          "type": "function",
+          "function": {
+            "name": `calculate_${promptKey}_array`,
+            "description": `Return the best ${promptKey} responses`,
+            "parameters": {
+              "type": "object",
+              "properties": {
+                "result": {
+                  "type": "array",
+                  "description": description,
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["result"]
+            }
+          }
+        };
+    }
+    if (openaiFunction) {
+      return [openaiFunction];
+    } else {
+      return null;
+    }
+  }
+  var init_openai_functions = __esm({
+    "lib/providers/openai-functions.js"() {
+    }
+  });
+
+  // lib/providers/fetch-ai-provider.js
+  async function callRemoteAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
+    const providerEm = providerFromModel(model);
+    model = model?.trim()?.length ? model : defaultProviderModel(providerEm);
+    const tools = toolsValueFromPrompt(promptKey);
+    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, promptKey) : null;
+    try {
+      return await requestWithRetry(
+        app,
+        model,
+        messages,
+        tools,
+        promptKey,
+        streamCallback,
+        allowResponse,
+        { timeoutSeconds: plugin2.constants.requestTimeoutSeconds }
+      );
+    } catch (error) {
+      if (plugin2.isTestEnvironment) {
+        throw error;
+      } else {
+        const providerName = providerNameFromProviderEm(providerEm);
+        app.alert(`Failed to call ${providerName}: ${error}`);
+      }
+      return null;
+    }
+  }
+  async function llmPrompt(app, plugin2, prompt, { aiModel = null, concurrency = 1, jsonResponse = false } = {}) {
+    let modelCandidates = preferredModels(app);
+    if (aiModel) {
+      modelCandidates = modelCandidates.filter((m) => m !== aiModel);
+      modelCandidates.unshift(aiModel);
+    }
+    const modelToUse = modelCandidates.shift();
+    const messages = [{ role: "user", content: prompt }];
+    const fetchResponse = await makeRequest(app, messages, modelToUse);
+    const promptKey = jsonResponse ? "llmPromptJson" : null;
+    const response = await responseFromStreamOrChunk(app, fetchResponse, modelToUse, promptKey, null, null);
+    if (response && jsonResponse) {
+      console.log("Received what should be json response:", response);
+      return extractJsonFromString(response);
+    } else {
+      return response;
+    }
+  }
+  function headersForProvider(providerEm, apiKey) {
+    const baseHeaders = { "Content-Type": "application/json" };
+    switch (providerEm) {
+      case "anthropic":
+        return {
+          ...baseHeaders,
+          "x-api-key": apiKey,
+          "anthropic-dangerous-direct-browser-access": "true",
+          "anthropic-version": "2023-06-01"
+        };
+      case "gemini":
+        return baseHeaders;
+      default:
+        return {
+          ...baseHeaders,
+          "Authorization": `Bearer ${apiKey}`
+        };
+    }
+  }
+  function requestBodyForProvider(messages, model, stream, tools, { promptKey = null } = {}) {
+    let body;
+    const providerEm = providerFromModel(model);
+    const jsonResponseExpected = isJsonPrompt(promptKey);
+    switch (providerEm) {
+      case "anthropic": {
+        const systemMessage = messages.find((m) => m.role === "system");
+        const nonSystemMessages = messages.filter((m) => m.role !== "system");
+        body = {
+          "max_tokens": 4096,
+          // WBH confirmed Q4 2025 Anthropic requires explicit max_tokens. TBD if this is the best value
+          model,
+          messages: nonSystemMessages
+        };
+        if (stream) {
+          body.stream = stream;
+        }
+        if (systemMessage) {
+          body.system = systemMessage.content;
+        }
+        break;
+      }
+      case "gemini": {
+        const systemMsg = messages.find((m) => m.role === "system");
+        const nonSystemMsgs = messages.filter((m) => m.role !== "system");
+        body = {
+          contents: nonSystemMsgs.map((m) => ({
+            role: m.role === "assistant" ? "model" : "user",
+            parts: [{ text: m.content }]
+          }))
+        };
+        if (systemMsg) {
+          body.systemInstruction = { parts: [{ text: systemMsg.content }] };
+        }
+        if (jsonResponseExpected) {
+          body.generationConfig = { responseMimeType: "application/json" };
+        }
+        break;
+      }
+      case "grok":
+      case "perplexity":
+        body = { model, messages };
+        if (stream)
+          body.stream = stream;
+        if (tools)
+          body.tools = tools;
+        break;
+      case "deepseek": {
+        body = { model, messages };
+        if (stream)
+          body.stream = stream;
+        if (tools)
+          body.tools = tools;
+        body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
+        if (jsonResponseExpected) {
+          body.response_format = { type: "json_object" };
+        }
+        break;
+      }
+      case "openai":
+      default: {
+        body = { model, messages };
+        if (stream)
+          body.stream = stream;
+        if (tools)
+          body.tools = tools;
+        const supportsFrequencyPenalty = !model.match(/^(o\d|gpt-5)/);
+        if (supportsFrequencyPenalty) {
+          body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
+        }
+        if (jsonResponseExpected) {
+          body.response_format = { type: "json_object" };
+        }
+        break;
+      }
+    }
+    return body;
+  }
+  async function makeRequest(app, messages, model, {
+    attemptNumber = 1,
+    promptKey = null,
+    stream = null,
+    timeoutSeconds = TIMEOUT_SECONDS,
+    tools = null
+  } = {}) {
+    const providerEm = providerFromModel(model);
+    if (attemptNumber > 0)
+      console.debug(`Attempt ${attemptNumber + 1}: Trying ${model} with ${promptKey || "no promptKey"}`);
+    const apiKey = apiKeyFromApp(app, providerEm);
+    const body = requestBodyForProvider(messages, model, stream, tools, { promptKey });
+    const endpoint = providerEndpointUrl(model, apiKey);
+    console.debug(`Calling ${providerEm} at ${endpoint} with body ${JSON.stringify(body)} at ${/* @__PURE__ */ new Date()}`);
+    const headers = headersForProvider(providerEm, apiKey);
+    const fetchResponse = await Promise.race([
+      fetch(endpoint, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(body)
+      }),
+      new Promise(
+        (_, reject) => setTimeout(() => reject(new Error("Timeout")), timeoutSeconds * 1e3)
+      )
+    ]);
+    if (!fetchResponse.ok) {
+      const err = new Error(`Request failed with status ${fetchResponse.status}`);
+      err.response = fetchResponse;
+      throw err;
+    }
+    return fetchResponse;
+  }
+  async function requestWithRetry(app, model, messages, tools, promptKey, streamCallback, allowResponse, {
+    suppressParallel = false,
+    retries = 3,
+    timeoutSeconds = TIMEOUT_SECONDS
+  } = {}) {
+    let error, response;
+    const providerEm = providerFromModel(model);
+    const providerName = providerNameFromProviderEm(providerEm);
+    const stream = !!streamCallback;
+    if (suppressParallel) {
+      for (let i = 0; i < retries; i++) {
+        try {
+          response = await makeRequest(
+            app,
+            messages,
+            model,
+            { attemptNumber: i, promptKey, stream, timeoutSeconds, tools }
+          );
+          break;
+        } catch (e) {
+          error = e;
+          response = e.response;
+          console.log(`Attempt ${i + 1} failed with`, e, `at ${/* @__PURE__ */ new Date()}. Retrying...`);
+        }
+      }
+    } else {
+      const promises = Array.from(
+        { length: retries },
+        (_, i) => makeRequest(app, messages, model, { attemptNumber: i, promptKey, stream, timeoutSeconds, tools }).catch((e) => {
+          console.log(`Parallel attempt ${i + 1} failed with`, e, `at ${/* @__PURE__ */ new Date()}`);
+          throw e;
+        })
+      );
+      try {
+        response = await Promise.any(promises);
+      } catch (aggregateError) {
+        error = aggregateError.errors?.[0] || aggregateError;
+        response = error?.response;
+      }
+    }
+    console.debug("Response from promises is", response, "specifically response?.ok", response?.ok);
+    if (response?.ok) {
+      return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
+    } else if (!response) {
+      app.alert(`Failed to call ${providerName}: ${error}`);
+      return null;
+    } else if (response.status === 401) {
+      app.alert(`Invalid ${providerName} API key. Please configure your ${providerName} key in plugin settings.`);
+      return null;
+    } else {
+      const result = await response.json();
+      console.error(`API error response from ${providerName}:`, result);
+      if (result && result.error) {
+        const errorMessage = result.error.message || JSON.stringify(result.error);
+        app.alert(`Failed to call ${providerName}: ${errorMessage}`);
+        return null;
+      }
+    }
+  }
+  function parseAnthropicStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected) {
+    let stop = false;
+    const incrementalContents = [];
+    const lines = decodedValue.split("\n");
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.startsWith("event:")) {
+        const eventType = line.substring(6).trim();
+        if (eventType === "message_stop") {
+          console.debug("Received message_stop from Anthropic");
+          stop = true;
+          break;
+        }
+      } else if (line.startsWith("data:")) {
+        try {
+          const data = JSON.parse(line.substring(5).trim());
+          if (data.type === "content_block_delta" && data.delta?.text) {
+            const content = data.delta.text;
+            incrementalContents.push(content);
+            receivedContent += content;
+            app.alert(receivedContent, {
+              actions: [{ icon: "pending", label: "Generating response" }],
+              preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+              scrollToEnd: true
+            });
+          }
+        } catch (e) {
+        }
+      }
+    }
+    return { stop, incrementalContents, receivedContent };
+  }
+  function parseGeminiStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent) {
+    let stop = false;
+    const incrementalContents = [];
+    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
+    for (const jsonString of responses) {
+      if (jsonString.includes("[DONE]")) {
+        console.debug("Received [DONE] from Gemini");
+        stop = true;
+        break;
+      }
+      let jsonResponse;
+      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
+      if (jsonResponse) {
+        const content = jsonResponse.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (content) {
+          incrementalContents.push(content);
+          receivedContent += content;
+          app.alert(receivedContent, {
+            actions: [{ icon: "pending", label: "Generating response" }],
+            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+            scrollToEnd: true
+          });
+        } else if (jsonResponse.candidates?.[0]?.finishReason) {
+          console.log("Finishing Gemini stream for reason", jsonResponse.candidates[0].finishReason);
+          stop = true;
+          break;
+        }
+      }
+    }
+    return { stop, incrementalContents, receivedContent, failedParseContent };
+  }
+  function parseOpenAICompatibleStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent) {
+    let stop = false;
+    const incrementalContents = [];
+    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
+    for (const jsonString of responses) {
+      if (jsonString.includes("[DONE]")) {
+        console.debug("Received [DONE] from jsonString");
+        stop = true;
+        break;
+      }
+      let jsonResponse;
+      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
+      if (jsonResponse) {
+        const content = jsonResponse.choices?.[0]?.delta?.content || jsonResponse.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments;
+        if (content) {
+          incrementalContents.push(content);
+          receivedContent += content;
+          app.alert(receivedContent, {
+            actions: [{ icon: "pending", label: "Generating response" }],
+            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
+            scrollToEnd: true
+          });
+        } else {
+          stop = !!jsonResponse?.finish_reason?.length || !!jsonResponse?.choices?.[0]?.finish_reason?.length;
+          if (stop) {
+            console.log("Finishing stream for reason", jsonResponse?.finish_reason || jsonResponse?.choices?.[0]?.finish_reason);
+            break;
+          }
+        }
+      }
+    }
+    return { stop, incrementalContents, receivedContent, failedParseContent };
+  }
+  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
+    const providerEm = providerFromModel(aiModel);
+    let result;
+    switch (providerEm) {
+      case "anthropic":
+        result = parseAnthropicStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected);
+        break;
+      case "gemini":
+        result = parseGeminiStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent);
+        break;
+      case "deepseek":
+      case "grok":
+      case "openai":
+      case "perplexity":
+        result = parseOpenAICompatibleStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent);
+        break;
+      default:
+        console.error(`Unknown provider for streaming: ${providerEm}`);
+        result = { stop: true, incrementalContents: [], receivedContent, failedParseContent };
+    }
+    return {
+      abort: result.stop,
+      failedParseContent: result.failedParseContent || null,
+      incrementalContents: result.incrementalContents,
+      receivedContent: result.receivedContent
+    };
+  }
+  var TIMEOUT_SECONDS;
+  var init_fetch_ai_provider = __esm({
+    "lib/providers/fetch-ai-provider.js"() {
+      init_ai_provider_settings();
+      init_fetch_json();
+      init_openai_functions();
+      init_prompt_api_params();
+      TIMEOUT_SECONDS = 30;
+    }
+  });
+
+  // lib/functions/search/candidate-collection.js
+  async function phase2_collectCandidates(searchAgent, criteria) {
+    searchAgent.emitProgress("Phase 2: Filtering candidates...");
+    const { primaryKeywords, secondaryKeywords, exactPhrase, dateFilter, tagRequirement } = criteria;
+    const titleCandidates = await searchTitlesByStrategy(searchAgent, primaryKeywords, secondaryKeywords, tagRequirement);
+    let candidates = titleCandidates;
+    const needsContentSearch = titleCandidates.length < 5 || exactPhrase || criteria.booleanRequirements.containsPDF || criteria.booleanRequirements.containsImage;
+    if (needsContentSearch) {
+      const contentQuery = exactPhrase || [...primaryKeywords, ...secondaryKeywords.slice(0, 3)].join(" ");
+      const contentCandidates = await searchAgent.app.searchNotes(contentQuery);
+      console.log(`Content search for "${contentQuery}": ${contentCandidates.length} results`);
+      candidates = mergeCandidates(titleCandidates, contentCandidates);
+    }
+    if (dateFilter) {
+      const dateField = dateFilter.type === "created" ? "created" : "updated";
+      const afterDate = new Date(dateFilter.after);
+      candidates = candidates.filter((note) => {
+        const noteDate = new Date(note[dateField]);
+        return noteDate >= afterDate;
+      });
+      console.log(`After date filter: ${candidates.length} candidates`);
+    }
+    if (candidates.length > 0) {
+      const tagFrequency = analyzeTagFrequency(candidates);
+      candidates = candidates.map((note) => {
+        let tagBoost = 1;
+        if (tagRequirement.preferred && note.tags) {
+          const hasPreferredTag = note.tags.some(
+            (tag) => tag === tagRequirement.preferred || tag.startsWith(tagRequirement.preferred + "/")
+          );
+          if (hasPreferredTag)
+            tagBoost = 1.5;
+        }
+        return { ...note, _tagBoost: tagBoost };
+      });
+    }
+    searchAgent.emitProgress(`Found ${candidates.length} candidate notes`);
+    return candidates;
+  }
+  function mergeCandidates(list1, list2) {
+    const uuidSet = new Set(list1.map((n) => n.uuid));
+    const unique = list2.filter((n) => !uuidSet.has(n.uuid));
+    return [...list1, ...unique];
+  }
+  function analyzeTagFrequency(candidates) {
+    const frequency = {};
+    candidates.forEach((note) => {
+      (note.tags || []).forEach((tag) => {
+        frequency[tag] = (frequency[tag] || 0) + 1;
+      });
+    });
+    return frequency;
+  }
+  async function searchTitlesByStrategy(searchAgent, primaryKeywords, secondaryKeywords, tagRequirement) {
+    if (primaryKeywords.length === 0)
+      return [];
+    let results = await executeSearchStrategy(searchAgent, primaryKeywords, tagRequirement);
+    if (results.length < MIN_TARGET_RESULTS && secondaryKeywords && secondaryKeywords.length > 0) {
+      const strategyName = getStrategyName(searchAgent.searchAttempt);
+      console.log(`[${strategyName}] Below minimum target (${MIN_TARGET_RESULTS}), broadening with secondary keywords`);
+      const secondaryKeywordsToUse = secondaryKeywords.slice(0, 5);
+      const secondaryResults = await executeSearchStrategy(searchAgent, secondaryKeywordsToUse, tagRequirement);
+      console.log(`[${strategyName}] Secondary keyword search: ${secondaryResults.length} results`);
+      results = mergeCandidates(results, secondaryResults);
+      console.log(`[${strategyName}] Total after merging: ${results.length} results`);
+    }
+    return results;
+  }
+  async function executeSearchStrategy(searchAgent, keywords, tagRequirement) {
+    if (keywords.length === 0)
+      return [];
+    const SearchAgent2 = (await Promise.resolve().then(() => (init_search_agent(), search_agent_exports))).default;
+    const strategyName = getStrategyName(searchAgent.searchAttempt);
+    if (searchAgent.searchAttempt === SearchAgent2.ATTEMPT_FIRST_PASS) {
+      const titleQuery = keywords.join(" ");
+      const results = await searchAgent.app.filterNotes({
+        query: titleQuery,
+        tag: tagRequirement.mustHave || void 0
+      });
+      console.log(`[${strategyName}] Title search for "${titleQuery}": ${results.length} results`);
+      return results;
+    } else if (searchAgent.searchAttempt === SearchAgent2.ATTEMPT_KEYWORD_PAIRS) {
+      const pairs = [];
+      for (let i = 0; i < keywords.length - 1; i++) {
+        pairs.push([keywords[i], keywords[i + 1]]);
+      }
+      if (keywords.length >= 3) {
+        pairs.push([keywords[0], keywords[keywords.length - 1]]);
+      }
+      const pairResults = await Promise.all(
+        pairs.map(
+          (pair) => searchAgent.app.filterNotes({
+            query: pair.join(" "),
+            tag: tagRequirement.mustHave || void 0
+          })
+        )
+      );
+      const seen = /* @__PURE__ */ new Set();
+      const uniqueResults = pairResults.flat().filter((note) => {
+        if (seen.has(note.uuid))
+          return false;
+        seen.add(note.uuid);
+        return true;
+      });
+      console.log(`[${strategyName}] Searched ${pairs.length} pairs: ${uniqueResults.length} unique results`);
+      return uniqueResults;
+    } else if (searchAgent.searchAttempt === SearchAgent2.ATTEMPT_INDIVIDUAL) {
+      const individualResults = await Promise.all(
+        keywords.map(async (keyword) => {
+          const results = await searchAgent.app.filterNotes({
+            query: keyword,
+            tag: tagRequirement.mustHave || void 0
+          });
+          return results.slice(0, 10);
+        })
+      );
+      const seen = /* @__PURE__ */ new Set();
+      const uniqueResults = individualResults.flat().filter((note) => {
+        if (seen.has(note.uuid))
+          return false;
+        seen.add(note.uuid);
+        return true;
+      });
+      console.log(`[${strategyName}] Searched ${keywords.length} keywords: ${uniqueResults.length} unique results`);
+      return uniqueResults;
+    }
+    return [];
+  }
+  async function getStrategyName(searchAttempt) {
+    const SearchAgent2 = (await Promise.resolve().then(() => (init_search_agent(), search_agent_exports))).default;
+    if (searchAttempt === SearchAgent2.ATTEMPT_FIRST_PASS)
+      return "First Pass";
+    if (searchAttempt === SearchAgent2.ATTEMPT_KEYWORD_PAIRS)
+      return "Keyword Pairs";
+    if (searchAttempt === SearchAgent2.ATTEMPT_INDIVIDUAL)
+      return "Individual Keywords";
+    return "Unknown";
+  }
+  var MIN_TARGET_RESULTS;
+  var init_candidate_collection = __esm({
+    "lib/functions/search/candidate-collection.js"() {
+      MIN_TARGET_RESULTS = 10;
+    }
+  });
+
+  // lib/functions/search/candidate-evaluation.js
+  async function phase3_deepAnalysis(searchAgent, candidates, criteria) {
+    searchAgent.emitProgress("Phase 3: Analyzing top candidates...");
+    const preliminaryRanked = rankPreliminary(candidates, criteria);
+    const topN = Math.min(8, preliminaryRanked.length);
+    const topCandidates = preliminaryRanked.slice(0, topN);
+    console.log(`Deep analyzing top ${topN} of ${candidates.length} candidates`);
+    const deepAnalysis = await searchAgent.parallelLimit(
+      topCandidates.map((note) => () => analyzeNoteDeep(note, searchAgent, criteria)),
+      5
+      // Max 5 concurrent API calls
+    );
+    const validCandidates = deepAnalysis.filter((analysis) => {
+      const { checks } = analysis;
+      if (criteria.booleanRequirements.containsPDF && !checks.hasPDF)
+        return false;
+      if (criteria.booleanRequirements.containsImage && !checks.hasImage)
+        return false;
+      if (criteria.exactPhrase && !checks.hasExactPhrase)
+        return false;
+      if (criteria.booleanRequirements.containsURL && !checks.hasURL)
+        return false;
+      return true;
+    });
+    console.log(`${validCandidates.length} candidates passed criteria checks`);
+    searchAgent.emitProgress(`${validCandidates.length} notes match all criteria`);
+    return { validCandidates, allAnalyzed: deepAnalysis };
+  }
+  async function phase4_scoreAndRank(searchAgent, analyzedCandidates, criteria, userQuery) {
+    searchAgent.emitProgress("Phase 4: Ranking results...");
+    const scoringPrompt = `
+You are scoring note search results. Original query: "${userQuery}"
+
+Extracted criteria:
+${JSON.stringify(criteria, null, 2)}
+
+Score each candidate note 0-10 on these dimensions:
+1. TITLE_RELEVANCE: How well does the note title match the search intent?
+2. KEYWORD_DENSITY: How concentrated are the keywords in the content?
+3. CRITERIA_MATCH: Does it meet all the hard requirements (PDF/image/URL/exact phrase)?
+4. TAG_ALIGNMENT: Does it have relevant or preferred tags?
+5. RECENCY: Is it recent enough (if recency matters)?
+
+Candidates to score:
+${analyzedCandidates.map((candidate, index) => `
+${index}. "${candidate.note.name}"
+   UUID: ${candidate.note.uuid}
+   Tags: ${candidate.note.tags?.join(", ") || "none"}
+   Updated: ${candidate.note.updated}
+   ${candidate.contentPreview ? `Content preview: ${candidate.contentPreview}` : "No content fetched"}
+   Checks: ${JSON.stringify(candidate.checks)}
+`).join("\n")}
+
+Return ONLY valid JSON array:
+[
+  {
+    "noteIndex": 0,
+    "titleRelevance": 8,
+    "keywordDensity": 7,
+    "criteriaMatch": 10,
+    "tagAlignment": 6,
+    "recency": 5,
+    "reasoning": "Brief explanation of why this note matches"
+  }
+]
+`;
+    const scores = await searchAgent.llm(scoringPrompt, { jsonResponse: true });
+    console.log("Received scores from LLM:", scores, "Type:", typeof scores, "Is array:", Array.isArray(scores));
+    const scoresArray = Array.isArray(scores) ? scores : [scores];
+    const weights = {
+      titleRelevance: 0.3,
+      keywordDensity: 0.25,
+      criteriaMatch: 0.2,
+      tagAlignment: 0.15,
+      recency: 0.1
+    };
+    const rankedNotes = scoresArray.map((score) => {
+      const finalScore = score.titleRelevance * weights.titleRelevance + score.keywordDensity * weights.keywordDensity + score.criteriaMatch * weights.criteriaMatch + score.tagAlignment * weights.tagAlignment + score.recency * weights.recency;
+      return {
+        note: analyzedCandidates[score.noteIndex].note,
+        finalScore: Math.round(finalScore * 10) / 10,
+        // Round to 1 decimal
+        scoreBreakdown: score,
+        checks: analyzedCandidates[score.noteIndex].checks
+      };
+    }).sort((a, b) => b.finalScore - a.finalScore);
+    return rankedNotes;
+  }
+  async function phase5_sanityCheck(searchAgent, rankedNotes, criteria, userQuery) {
+    searchAgent.emitProgress("Phase 5: Verifying results...");
+    if (rankedNotes.length === 0) {
+      return searchAgent.handleNoResults(criteria);
+    }
+    const topResult = rankedNotes[0];
+    if (topResult.finalScore >= 9.5) {
+      searchAgent.emitProgress("Found excellent match!");
+      return searchAgent.formatResult(rankedNotes, criteria.resultCount);
+    }
+    const sanityPrompt = `
+Original query: "${userQuery}"
+
+Top recommended note:
+- Title: "${topResult.note.name}"
+- Score: ${topResult.finalScore}/10
+- Tags: ${topResult.note.tags?.join(", ") || "none"}
+- Reasoning: ${topResult.scoreBreakdown.reasoning}
+
+Does this genuinely seem like what the user is looking for?
+
+Consider:
+1. Does the title make sense given the query?
+2. Is the score reasonable (>6.0 suggests good match)?
+3. Are there obvious mismatches?
+
+Return ONLY valid JSON:
+{
+  "confident": true,
+  "concerns": null,
+  "suggestAction": "accept"
+}
+
+Or if not confident:
+{
+  "confident": false,
+  "concerns": "Explanation of concern",
+  "suggestAction": "retry_broader" | "retry_narrower" | "insufficient_data"
+}
+`;
+    const sanityCheck = await searchAgent.llm(sanityPrompt, { jsonResponse: true });
+    if (sanityCheck.confident || searchAgent.retryCount >= searchAgent.maxRetries) {
+      searchAgent.emitProgress("Search complete!");
+      return searchAgent.formatResult(rankedNotes, criteria.resultCount);
+    }
+    console.log(`Sanity check failed: ${sanityCheck.concerns}`);
+    searchAgent.retryCount++;
+    if (sanityCheck.suggestAction === "retry_broader") {
+      return searchAgent.retryWithBroaderCriteria(userQuery, criteria);
+    } else if (sanityCheck.suggestAction === "insufficient_data") {
+      return {
+        found: false,
+        message: "No notes found matching your criteria",
+        suggestions: rankedNotes.slice(0, 3).map((r) => ({
+          note: r.note,
+          score: r.finalScore,
+          reason: "Close match but doesn't fully meet criteria"
+        }))
+      };
+    }
+    return searchAgent.formatResult(rankedNotes, criteria.resultCount);
+  }
+  async function analyzeNoteDeep(note, searchAgent, searchParams) {
+    const checks = {};
+    let content = null;
+    const needAttachments = searchParams.booleanRequirements.containsPDF;
+    const needImages = searchParams.booleanRequirements.containsImage;
+    const needContent = searchParams.exactPhrase || searchParams.booleanRequirements.containsURL;
+    const fetches = [];
+    if (needAttachments) {
+      fetches.push(
+        searchAgent.app.notes.find(note.uuid).then((n) => n.attachments()).then((attachments) => {
+          checks.hasPDF = attachments.some(
+            (a) => a.type === "application/pdf" || a.name.endsWith(".pdf")
+          );
+          checks.attachmentCount = attachments.length;
+        })
+      );
+    }
+    if (needImages) {
+      fetches.push(
+        searchAgent.app.notes.find(note.uuid).then((n) => n.images()).then((images) => {
+          checks.hasImage = images.length > 0;
+          checks.imageCount = images.length;
+        })
+      );
+    }
+    if (needContent) {
+      fetches.push(
+        searchAgent.app.notes.find(note.uuid).then((n) => n.content()).then((noteContent) => {
+          content = noteContent;
+          if (searchParams.exactPhrase) {
+            checks.hasExactPhrase = noteContent.includes(searchParams.exactPhrase);
+          }
+          if (searchParams.criteria.containsURL) {
+            checks.hasURL = /https?:\/\/[^\s]+/.test(noteContent);
+            const urls = noteContent.match(/https?:\/\/[^\s]+/g);
+            checks.urlCount = urls ? urls.length : 0;
+          }
+        })
+      );
+    }
+    await Promise.all(fetches);
+    console.log(`Deep analysis finds note "${note.name}" from ${JSON.stringify(searchParams)} finds needAttachments: ${checks.hasPDF}, needImages: ${checks.hasImage}, needContent: ${content ? "fetched" : "not fetched"}`);
+    return {
+      note,
+      content: needContent ? content : null,
+      contentPreview: content ? content.substring(0, 500) : null,
+      checks
+    };
+  }
+  function rankPreliminary(noteCandidates, searchParams) {
+    const noteScores = noteCandidates.map((note) => {
+      let score = 0;
+      const titleLower = (note.name || "").toLowerCase();
+      searchParams.primaryKeywords.forEach((kw) => {
+        if (titleLower.includes(kw.toLowerCase())) {
+          score += 10;
+        }
+      });
+      searchParams.secondaryKeywords.slice(0, 3).forEach((kw) => {
+        if (titleLower.includes(kw.toLowerCase())) {
+          score += 3;
+        }
+      });
+      score += (note._tagBoost || 1) * 5;
+      if (searchParams.dateFilter) {
+        const daysSinceUpdate = (Date.now() - new Date(note.updated)) / (1e3 * 60 * 60 * 24);
+        score += Math.max(0, 5 - daysSinceUpdate / 30);
+      }
+      return { note, preliminaryScore: score };
+    });
+    const sortedByScore = noteScores.sort((a, b) => b.preliminaryScore - a.preliminaryScore);
+    return sortedByScore.map((item) => item.note);
+  }
+  var init_candidate_evaluation = __esm({
+    "lib/functions/search/candidate-evaluation.js"() {
+    }
+  });
+
+  // lib/functions/search/user-criteria.js
+  var UserCriteria;
+  var init_user_criteria = __esm({
+    "lib/functions/search/user-criteria.js"() {
+      UserCriteria = class {
+        // --------------------------------------------------------------------------
+        constructor(options = {}) {
+          this.primaryKeywords = options.primaryKeywords || [];
+          this.secondaryKeywords = options.secondaryKeywords || [];
+          this.exactPhrase = options.exactPhrase || null;
+          this.booleanRequirements = {
+            containsPDF: options.criteria?.containsPDF || false,
+            containsImage: options.criteria?.containsImage || false,
+            containsURL: options.criteria?.containsURL || false
+          };
+          this.dateFilter = options.dateFilter || null;
+          this.tagRequirement = {
+            mustHave: options.tagRequirement?.mustHave || null,
+            preferred: options.tagRequirement?.preferred || null
+          };
+          this.resultCount = options.resultCount || 1;
+        }
+        // --------------------------------------------------------------------------
+        // Legacy compatibility: Allow accessing as .criteria for backward compatibility
+        // This getter returns the booleanRequirements object when accessing .criteria
+        get criteria() {
+          return this.booleanRequirements;
+        }
+        // --------------------------------------------------------------------------
+        // Legacy compatibility: Allow setting .criteria
+        set criteria(value) {
+          this.booleanRequirements = value;
+        }
+        // --------------------------------------------------------------------------
+        // Create a new UserCriteria instance with some fields overridden
+        // Useful for retry logic where we want to broaden/narrow search
+        withOverrides(overrides = {}) {
+          return new UserCriteria({
+            primaryKeywords: overrides.primaryKeywords || this.primaryKeywords,
+            secondaryKeywords: overrides.secondaryKeywords || this.secondaryKeywords,
+            exactPhrase: overrides.exactPhrase !== void 0 ? overrides.exactPhrase : this.exactPhrase,
+            criteria: overrides.criteria || this.booleanRequirements,
+            dateFilter: overrides.dateFilter !== void 0 ? overrides.dateFilter : this.dateFilter,
+            tagRequirement: overrides.tagRequirement || this.tagRequirement,
+            resultCount: overrides.resultCount || this.resultCount
+          });
+        }
+        // --------------------------------------------------------------------------
+        // Normalize a tag (lowercase with dashes)
+        static normalizeTag(tag) {
+          if (!tag)
+            return tag;
+          return tag.toLowerCase().replace(/[^a-z0-9]+/g, "-");
+        }
+        // --------------------------------------------------------------------------
+        // Create UserCriteria from extracted LLM response with manual overrides
+        static fromExtracted(extracted, options = {}) {
+          const extractedTagReq = {
+            mustHave: UserCriteria.normalizeTag(extracted.tagRequirement?.mustHave),
+            preferred: UserCriteria.normalizeTag(extracted.tagRequirement?.preferred)
+          };
+          const optionsTagReq = {
+            mustHave: UserCriteria.normalizeTag(options.tagRequirement?.mustHave),
+            preferred: UserCriteria.normalizeTag(options.tagRequirement?.preferred)
+          };
+          return new UserCriteria({
+            primaryKeywords: options.primaryKeywords || extracted.primaryKeywords || [],
+            secondaryKeywords: options.secondaryKeywords || extracted.secondaryKeywords || [],
+            exactPhrase: options.exactPhrase !== void 0 ? options.exactPhrase : extracted.exactPhrase,
+            criteria: options.criteria ? { ...extracted.criteria, ...options.criteria } : extracted.criteria,
+            dateFilter: options.dateFilter !== void 0 ? options.dateFilter : extracted.dateFilter,
+            tagRequirement: { ...extractedTagReq, ...optionsTagReq },
+            resultCount: options.resultCount || extracted.resultCount || 1
+          });
+        }
+        // --------------------------------------------------------------------------
+        // Convert to JSON for logging/debugging
+        toJSON() {
+          return {
+            primaryKeywords: this.primaryKeywords,
+            secondaryKeywords: this.secondaryKeywords,
+            exactPhrase: this.exactPhrase,
+            booleanRequirements: this.booleanRequirements,
+            dateFilter: this.dateFilter,
+            tagRequirement: this.tagRequirement,
+            resultCount: this.resultCount
+          };
+        }
+      };
+    }
+  });
+
+  // lib/functions/search/query-breakdown.js
+  async function phase1_analyzeQuery(searchAgent, userQuery, options) {
+    searchAgent.emitProgress("Phase 1: Analyzing query...");
+    const analysisPrompt = `
+Analyze this note search query and extract structured search criteria.
+
+User Query: "${userQuery}"
+
+Extract:
+1. PRIMARY_KEYWORDS: 3-5 words most likely to appear in the note TITLE
+2. SECONDARY_KEYWORDS: 5-10 additional words likely in note content. 
+   Include the category of the primary keywords (e.g., "sandwich" as "food") or synonyms for the 
+   words in the note title (e.g., "New York" as "NY"). 
+3. EXACT_PHRASE: If user wants exact text match, extract it (or null)
+4. CRITERIA:
+   - containsPDF: Did the user request notes with PDF attachments?
+   - containsImage: Did user request notes with images?
+   - containsURL: Did the user request notes with web links?
+5. DATE_FILTER:
+   - type: "created" or "updated" (or null if no date mentioned)
+   - after: ISO date string (YYYY-MM-DD) for earliest date
+6. TAG_REQUIREMENT:
+   - mustHave: Tag that MUST be present (null if none required)
+   - preferred: Tag that"s PREFERRED but not required (null if none)
+7. RESULT_COUNT: 1 for single best match, or N for top N results
+
+Return ONLY valid JSON:
+{
+  "primaryKeywords": ["word1", "word2"],
+  "secondaryKeywords": ["word3", "word4", "word5"],
+  "exactPhrase": null,
+  "criteria": {
+    "containsPDF": false,
+    "containsImage": false,
+    "containsURL": false
+  },
+  "dateFilter": null,
+  "tagRequirement": {
+    "mustHave": null,
+    "preferred": null
+  },
+  "resultCount": 1
+}
+`;
+    const validateCriteria = (result) => {
+      return result?.primaryKeywords && Array.isArray(result.primaryKeywords) && result.primaryKeywords.length > 0;
+    };
+    const extracted = await searchAgent.llmWithRetry(analysisPrompt, validateCriteria, { jsonResponse: true });
+    console.log("Extracted criteria:", extracted);
+    if (!extracted.secondaryKeywords)
+      extracted.secondaryKeywords = [];
+    if (!extracted.criteria)
+      extracted.criteria = { containsPDF: false, containsImage: false, containsURL: false };
+    if (!extracted.tagRequirement)
+      extracted.tagRequirement = { mustHave: null, preferred: null };
+    return UserCriteria.fromExtracted(extracted, options);
+  }
+  var init_query_breakdown = __esm({
+    "lib/functions/search/query-breakdown.js"() {
+      init_user_criteria();
+    }
+  });
+
+  // lib/functions/search-agent.js
+  var search_agent_exports = {};
+  __export(search_agent_exports, {
+    default: () => SearchAgent
+  });
+  var _SearchAgent, SearchAgent;
+  var init_search_agent = __esm({
+    "lib/functions/search-agent.js"() {
+      init_candidate_collection();
+      init_candidate_evaluation();
+      init_query_breakdown();
+      init_ai_provider_settings();
+      init_fetch_ai_provider();
+      _SearchAgent = class {
+        // Search each keyword individually
+        // --------------------------------------------------------------------------
+        constructor(app, plugin2) {
+          this.app = app;
+          this.llm = llmPrompt.bind(null, app, plugin2);
+          this.plugin = plugin2;
+          this.retryCount = 0;
+          this.maxRetries = 2;
+          this.progressCallback = null;
+          this.searchAttempt = _SearchAgent.ATTEMPT_FIRST_PASS;
+        }
+        // --------------------------------------------------------------------------
+        // Main search entry point
+        // @param {string} userQuery - The search query (50-5000 words)
+        // @param {Object} options - Optional overrides for search criteria
+        // @param {string[]} [options.primaryKeywords] - 3-5 primary keywords to search in note titles
+        // @param {string[]} [options.secondaryKeywords] - 5-10 secondary keywords for content search
+        // @param {string} [options.exactPhrase] - Exact phrase that must appear in note content
+        // @param {Object} [options.criteria] - Hard requirements for notes
+        // @param {boolean} [options.criteria.containsPDF] - Note must have PDF attachments
+        // @param {boolean} [options.criteria.containsImage] - Note must have images
+        // @param {boolean} [options.criteria.containsURL] - Note must have web links
+        // @param {Object} [options.dateFilter] - Filter by creation or update date
+        // @param {string} [options.dateFilter.type] - "created" or "updated"
+        // @param {string} [options.dateFilter.after] - ISO date string (YYYY-MM-DD) for earliest date
+        // @param {Object} [options.tagRequirement] - Tag filtering requirements
+        // @param {string} [options.tagRequirement.mustHave] - Tag that MUST be present (normalized to lowercase with dashes)
+        // @param {string} [options.tagRequirement.preferred] - Tag that is PREFERRED but not required (normalized to lowercase with dashes)
+        // @param {number} [options.resultCount=1] - Number of results to return (1 for single best match, N for top N)
+        // @returns {Promise<SearchResult>} Search result with found notes, confidence scores, and summary note
+        async search(userQuery, options = {}) {
+          try {
+            this.emitProgress("Starting search analysis...");
+            const criteria = await phase1_analyzeQuery(this, userQuery, options);
+            const candidates = await phase2_collectCandidates(this, criteria);
+            if (candidates.length === 0) {
+              return this.handleNoResults(criteria);
+            }
+            const { validCandidates, allAnalyzed } = await phase3_deepAnalysis(this, candidates, criteria);
+            let rankedNotes;
+            if (validCandidates.length === 0 && this.retryCount < this.maxRetries) {
+              return this.retryWithBroaderCriteria(userQuery, criteria);
+            } else if (validCandidates.length === 0 && allAnalyzed.length > 0) {
+              console.log("No perfect matches found, using partial matches");
+              rankedNotes = await phase4_scoreAndRank(this, allAnalyzed, criteria, userQuery);
+            } else if (validCandidates.length > 0) {
+              rankedNotes = await phase4_scoreAndRank(this, validCandidates, criteria, userQuery);
+            } else {
+              rankedNotes = [];
+            }
+            const finalResult = await phase5_sanityCheck(this, rankedNotes, criteria, userQuery);
+            const summaryNote = await this.createSearchSummaryNote(userQuery, finalResult, rankedNotes);
+            finalResult.summaryNote = summaryNote;
+            return finalResult;
+          } catch (error) {
+            console.error("Search agent error:", error);
+            return {
+              found: false,
+              error: error.message,
+              suggestions: []
+            };
+          }
+        }
+        // --------------------------------------------------------------------------
+        // Helper: Query LLM with retry across different models until valid response
+        async llmWithRetry(prompt, validateFn, options = {}) {
+          const models = preferredModels(this.app);
+          const maxAttempts = Math.min(models.length, 3);
+          for (let i = 0; i < maxAttempts; i++) {
+            const aiModel = i === 0 ? null : models[i];
+            console.log(`LLM attempt ${i + 1}${aiModel ? ` with model ${aiModel}` : " with default model"}`);
+            try {
+              const result = await this.llm(prompt, { ...options, aiModel });
+              console.log("LLM response:", result);
+              if (validateFn(result)) {
+                console.log("LLM response validated successfully");
+                return result;
+              } else {
+                console.log("LLM response failed validation, retrying...");
+              }
+            } catch (error) {
+              console.error(`LLM attempt ${i + 1} failed:`, error);
+            }
+          }
+          throw new Error("Failed to get valid response from LLM after multiple attempts");
+        }
+        // --------------------------------------------------------------------------
+        formatResult(rankedNotes, resultCount) {
+          if (resultCount === 1) {
+            const best = rankedNotes[0];
+            return {
+              found: true,
+              note: {
+                uuid: best.note.uuid,
+                name: best.note.name,
+                url: best.note.url(),
+                tags: best.note.tags || [],
+                updated: best.note.updated,
+                created: best.note.created
+              },
+              confidence: best.finalScore,
+              matchDetails: {
+                titleRelevance: best.scoreBreakdown.titleRelevance,
+                reasoning: best.scoreBreakdown.reasoning,
+                checks: best.checks
+              },
+              scoreBreakdown: best.scoreBreakdown
+            };
+          } else {
+            return {
+              found: true,
+              count: Math.min(resultCount, rankedNotes.length),
+              notes: rankedNotes.slice(0, resultCount).map((r, i) => ({
+                rank: i + 1,
+                score: r.finalScore,
+                note: {
+                  uuid: r.note.uuid,
+                  name: r.note.name,
+                  url: r.note.url(),
+                  tags: r.note.tags || [],
+                  updated: r.note.updated
+                },
+                reasoning: r.scoreBreakdown.reasoning,
+                checks: r.checks
+              }))
+            };
+          }
+        }
+        // --------------------------------------------------------------------------
+        // Create a summary note with search results
+        async createSearchSummaryNote(userQuery, searchResult, rankedNotes) {
+          try {
+            const modelUsed = preferredModel(this.app, this.plugin.lastModelUsed) || "unknown model";
+            const titlePrompt = `Create a brief, descriptive title (max 40 chars) for a search results note.
+Search query: "${userQuery}"
+Found: ${searchResult.found ? "Yes" : "No"}
+Return ONLY the title text, nothing else.`;
+            const titleBase = await this.llm(titlePrompt, { jsonResponse: false });
+            const now = /* @__PURE__ */ new Date();
+            const noteTitle = `${modelUsed} result: ${titleBase.trim()} (queried ${now.toLocaleDateString()})`;
+            let noteContent = `# Search Results
+
+**Query:** ${userQuery}
+
+`;
+            if (rankedNotes && rankedNotes.length > 0) {
+              noteContent += `## Matched Notes (${rankedNotes.length})
+
+`;
+              rankedNotes.forEach((ranked, index) => {
+                const note = ranked.note;
+                noteContent += `${index + 1}. `;
+                noteContent += `[[${note.name}|note=${note.uuid}]]`;
+                noteContent += ` (Score: ${ranked.finalScore.toFixed(1)}/10)
+`;
+                if (ranked.scoreBreakdown?.reasoning) {
+                  noteContent += `   - ${ranked.scoreBreakdown.reasoning}
+`;
+                }
+                if (note.tags && note.tags.length > 0) {
+                  noteContent += `   - Tags: ${note.tags.join(", ")}
+`;
+                }
+                noteContent += `
+`;
+              });
+            } else {
+              noteContent += `## No Results Found
+
+No notes matched the search criteria.
+
+`;
+            }
+            const summaryNoteHandle = await this.app.createNote(noteTitle.trim(), ["plugins/ample-ai"]);
+            await this.app.replaceNoteContent(summaryNoteHandle, noteContent);
+            return {
+              uuid: summaryNoteHandle.uuid,
+              name: noteTitle.trim(),
+              url: await summaryNoteHandle.url()
+            };
+          } catch (error) {
+            console.error("Failed to create search summary note:", error);
+            return null;
+          }
+        }
+        // --------------------------------------------------------------------------
+        // Helper: Parallel execution with concurrency limit
+        async parallelLimit(tasks, limit) {
+          const results = [];
+          const executing = [];
+          for (const task of tasks) {
+            const promise = task().then((result) => {
+              executing.splice(executing.indexOf(promise), 1);
+              return result;
+            });
+            results.push(promise);
+            executing.push(promise);
+            if (executing.length >= limit) {
+              await Promise.race(executing);
+            }
+          }
+          return Promise.all(results);
+        }
+        // --------------------------------------------------------------------------
+        // Retry with broader search criteria
+        async retryWithBroaderCriteria(userQuery, originalCriteria) {
+          this.retryCount++;
+          if (this.retryCount === 1) {
+            this.searchAttempt = _SearchAgent.ATTEMPT_KEYWORD_PAIRS;
+            console.log("Retrying with keyword pairs strategy...");
+            this.emitProgress("Retrying with keyword pairs...");
+          } else if (this.retryCount >= 2) {
+            this.searchAttempt = _SearchAgent.ATTEMPT_INDIVIDUAL;
+            console.log("Retrying with individual keyword strategy...");
+            this.emitProgress("Retrying with individual keywords...");
+          }
+          const broaderCriteria = originalCriteria.withOverrides({
+            primaryKeywords: [
+              ...originalCriteria.primaryKeywords,
+              ...originalCriteria.secondaryKeywords.slice(0, 2)
+            ],
+            tagRequirement: {
+              mustHave: null,
+              // Remove hard tag requirement
+              preferred: originalCriteria.tagRequirement.mustHave || originalCriteria.tagRequirement.preferred
+            }
+          });
+          return this.search(userQuery, broaderCriteria);
+        }
+        // --------------------------------------------------------------------------
+        // Handle no results found
+        handleNoResults(criteria) {
+          return {
+            found: false,
+            message: "No notes found matching your criteria",
+            attemptedKeywords: criteria.primaryKeywords,
+            attemptedFilters: {
+              dateFilter: criteria.dateFilter,
+              tagRequirement: criteria.tagRequirement,
+              booleanRequirements: criteria.booleanRequirements
+            },
+            suggestion: "Try removing some filters or using broader search terms"
+          };
+        }
+        // --------------------------------------------------------------------------
+        emitProgress(message) {
+          console.log(`[SearchAgent] ${message}`);
+          if (this.progressCallback) {
+            this.progressCallback(message);
+          }
+        }
+        // --------------------------------------------------------------------------
+        onProgress(callback) {
+          this.progressCallback = callback;
+        }
+      };
+      SearchAgent = _SearchAgent;
+      // Search attempt strategies
+      __publicField(SearchAgent, "ATTEMPT_FIRST_PASS", "first_pass");
+      // Search all keywords together
+      __publicField(SearchAgent, "ATTEMPT_KEYWORD_PAIRS", "keyword_pairs");
+      // Search keywords in pairs
+      __publicField(SearchAgent, "ATTEMPT_INDIVIDUAL", "individual");
+    }
+  });
+
+  // lib/plugin.js
+  init_app_util();
+  init_functionality();
+  init_prompt_strings();
+  init_provider();
+  init_settings();
+
+  // lib/model-picker.js
+  init_prompt_strings();
+  init_provider();
+  init_ai_provider_settings();
+  init_settings();
 
   // lib/providers/fetch-ollama.js
+  init_provider();
+  init_fetch_json();
+  init_prompt_api_params();
   async function callOllama(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
     const stream = shouldStream(plugin2);
     const jsonEndpoint = isJsonPrompt(promptKey);
@@ -982,7 +2296,16 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     return { abort: jsonResponse.done, failedParseContent, incrementalContents, receivedContent };
   }
 
+  // lib/model-picker.js
+  init_fetch_ai_provider();
+
   // lib/prompts.js
+  init_app_util();
+  init_functionality();
+  init_provider();
+  init_settings();
+  init_ai_provider_settings();
+  init_prompt_api_params();
   var PROMPT_KEYS = [
     "answer",
     "answerSelection",
@@ -1237,338 +2560,18 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
     return contentIndex;
   }
 
-  // lib/providers/openai-functions.js
-  function toolsValueFromPrompt(promptKey) {
-    let openaiFunction;
-    switch (promptKey) {
-      case "rhyming":
-      case "thesaurus":
-        const description = promptKey === "rhyming" ? "Array of 10 contextually relevant rhyming words" : "Array of 10 contextually relevant alternate words";
-        openaiFunction = {
-          "type": "function",
-          "function": {
-            "name": `calculate_${promptKey}_array`,
-            "description": `Return the best ${promptKey} responses`,
-            "parameters": {
-              "type": "object",
-              "properties": {
-                "result": {
-                  "type": "array",
-                  "description": description,
-                  "items": {
-                    "type": "string"
-                  }
-                }
-              },
-              "required": ["result"]
-            }
-          }
-        };
-    }
-    if (openaiFunction) {
-      return [openaiFunction];
-    } else {
-      return null;
-    }
-  }
-
-  // lib/providers/fetch-ai-provider.js
-  async function callRemoteAI(plugin2, app, model, messages, promptKey, allowResponse, modelsQueried = []) {
-    const providerEm = providerFromModel(model);
-    model = model?.trim()?.length ? model : defaultProviderModel(providerEm);
-    const tools = toolsValueFromPrompt(promptKey);
-    const streamCallback = shouldStream(plugin2) ? streamAccumulate2.bind(null, modelsQueried, promptKey) : null;
-    try {
-      const providerApiKey = apiKeyFromApp(plugin2, app, providerEm);
-      return await requestWithRetry(
-        app,
-        model,
-        messages,
-        tools,
-        providerApiKey,
-        promptKey,
-        streamCallback,
-        allowResponse,
-        { timeoutSeconds: plugin2.constants.requestTimeoutSeconds }
-      );
-    } catch (error) {
-      if (plugin2.isTestEnvironment) {
-        throw error;
-      } else {
-        const providerName = providerNameFromProviderEm(providerEm);
-        app.alert(`Failed to call ${providerName}: ${error}`);
-      }
-      return null;
-    }
-  }
-  function headersForProvider(providerEm, apiKey) {
-    const baseHeaders = { "Content-Type": "application/json" };
-    switch (providerEm) {
-      case "anthropic":
-        return {
-          ...baseHeaders,
-          "x-api-key": apiKey,
-          "anthropic-dangerous-direct-browser-access": "true",
-          "anthropic-version": "2023-06-01"
-        };
-      case "gemini":
-        return baseHeaders;
-      default:
-        return {
-          ...baseHeaders,
-          "Authorization": `Bearer ${apiKey}`
-        };
-    }
-  }
-  function requestBodyForProvider(model, messages, stream, tools, promptKey) {
-    let body;
-    switch (providerFromModel(model)) {
-      case "anthropic": {
-        const systemMessage = messages.find((m) => m.role === "system");
-        const nonSystemMessages = messages.filter((m) => m.role !== "system");
-        body = {
-          "max_tokens": 4096,
-          // WBH confirmed Q4 2025 Anthropic requires explicit max_tokens. TBD if this is the best value
-          model,
-          messages: nonSystemMessages,
-          stream
-        };
-        if (systemMessage) {
-          body.system = systemMessage.content;
-        }
-        break;
-      }
-      case "gemini": {
-        const systemMsg = messages.find((m) => m.role === "system");
-        const nonSystemMsgs = messages.filter((m) => m.role !== "system");
-        body = {
-          contents: nonSystemMsgs.map((m) => ({
-            role: m.role === "assistant" ? "model" : "user",
-            parts: [{ text: m.content }]
-          }))
-        };
-        if (systemMsg) {
-          body.systemInstruction = { parts: [{ text: systemMsg.content }] };
-        }
-        break;
-      }
-      case "grok":
-      case "perplexity":
-        body = { model, messages, stream };
-        if (tools)
-          body.tools = tools;
-        break;
-      case "deepseek":
-      case "openai":
-      default: {
-        body = { model, messages, stream };
-        if (tools)
-          body.tools = tools;
-        const supportsFrequencyPenalty = !model.match(/^(o\d|gpt-5)/);
-        if (supportsFrequencyPenalty) {
-          body.frequency_penalty = frequencyPenaltyFromPromptKey(promptKey);
-        }
-        break;
-      }
-    }
-    return body;
-  }
-  async function requestWithRetry(app, model, messages, tools, apiKey, promptKey, streamCallback, allowResponse, {
-    retries = 3,
-    timeoutSeconds = 30
-  } = {}) {
-    let error, response;
-    const providerEm = providerFromModel(model);
-    const providerName = providerNameFromProviderEm(providerEm);
-    if (!apiKey?.length) {
-      app.alert(`Please configure your ${providerName} API key in plugin settings.`);
-      return null;
-    }
-    const jsonResponseExpected = isJsonPrompt(promptKey);
-    for (let i = 0; i < retries; i++) {
-      if (i > 0)
-        console.debug(`Loop ${i + 1}: Retrying ${model} with ${promptKey}`);
-      try {
-        const body = requestBodyForProvider(model, messages, !!streamCallback, tools, promptKey);
-        if (jsonResponseExpected && (model.includes("gpt-4") || model.includes("gpt-3.5-turbo-1106"))) {
-          body.response_format = { type: "json_object" };
-        }
-        const endpoint = providerEndpointUrl(model, apiKey);
-        console.debug(`Calling ${providerEm} at ${endpoint} with body ${body} at ${/* @__PURE__ */ new Date()}`);
-        const headers = headersForProvider(providerEm, apiKey);
-        response = await Promise.race([
-          fetch(endpoint, {
-            method: "POST",
-            headers,
-            body: JSON.stringify(body)
-          }),
-          new Promise(
-            (_, reject) => setTimeout(() => reject(new Error("Timeout")), timeoutSeconds * 1e3)
-          )
-        ]);
-      } catch (e) {
-        error = e;
-        console.log(`Attempt ${i + 1} failed with`, e, `at ${/* @__PURE__ */ new Date()}. Retrying...`);
-      }
-      if (response?.ok) {
-        break;
-      }
-    }
-    console.debug("Response from promises is", response, "specifically response?.ok", response?.ok);
-    if (response?.ok) {
-      return await responseFromStreamOrChunk(app, response, model, promptKey, streamCallback, allowResponse, { timeoutSeconds });
-    } else if (!response) {
-      app.alert(`Failed to call ${providerName}: ${error}`);
-      return null;
-    } else if (response.status === 401) {
-      app.alert(`Invalid ${providerName} API key. Please configure your ${providerName} key in plugin settings.`);
-      return null;
-    } else {
-      const result = await response.json();
-      console.error(`API error response from ${providerName}:`, result);
-      if (result && result.error) {
-        const errorMessage = result.error.message || JSON.stringify(result.error);
-        app.alert(`Failed to call ${providerName}: ${errorMessage}`);
-        return null;
-      }
-    }
-  }
-  function parseAnthropicStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected) {
-    let stop = false;
-    const incrementalContents = [];
-    const lines = decodedValue.split("\n");
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
-      if (line.startsWith("event:")) {
-        const eventType = line.substring(6).trim();
-        if (eventType === "message_stop") {
-          console.debug("Received message_stop from Anthropic");
-          stop = true;
-          break;
-        }
-      } else if (line.startsWith("data:")) {
-        try {
-          const data = JSON.parse(line.substring(5).trim());
-          if (data.type === "content_block_delta" && data.delta?.text) {
-            const content = data.delta.text;
-            incrementalContents.push(content);
-            receivedContent += content;
-            app.alert(receivedContent, {
-              actions: [{ icon: "pending", label: "Generating response" }],
-              preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
-              scrollToEnd: true
-            });
-          }
-        } catch (e) {
-        }
-      }
-    }
-    return { stop, incrementalContents, receivedContent };
-  }
-  function parseGeminiStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent) {
-    let stop = false;
-    const incrementalContents = [];
-    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
-    for (const jsonString of responses) {
-      if (jsonString.includes("[DONE]")) {
-        console.debug("Received [DONE] from Gemini");
-        stop = true;
-        break;
-      }
-      let jsonResponse;
-      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
-      if (jsonResponse) {
-        const content = jsonResponse.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (content) {
-          incrementalContents.push(content);
-          receivedContent += content;
-          app.alert(receivedContent, {
-            actions: [{ icon: "pending", label: "Generating response" }],
-            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
-            scrollToEnd: true
-          });
-        } else if (jsonResponse.candidates?.[0]?.finishReason) {
-          console.log("Finishing Gemini stream for reason", jsonResponse.candidates[0].finishReason);
-          stop = true;
-          break;
-        }
-      }
-    }
-    return { stop, incrementalContents, receivedContent, failedParseContent };
-  }
-  function parseOpenAICompatibleStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent) {
-    let stop = false;
-    const incrementalContents = [];
-    const responses = decodedValue.split(/^data: /m).filter((s) => s.trim().length);
-    for (const jsonString of responses) {
-      if (jsonString.includes("[DONE]")) {
-        console.debug("Received [DONE] from jsonString");
-        stop = true;
-        break;
-      }
-      let jsonResponse;
-      ({ failedParseContent, jsonResponse } = jsonResponseFromStreamChunk(jsonString, failedParseContent));
-      if (jsonResponse) {
-        const content = jsonResponse.choices?.[0]?.delta?.content || jsonResponse.choices?.[0]?.delta?.tool_calls?.[0]?.function?.arguments;
-        if (content) {
-          incrementalContents.push(content);
-          receivedContent += content;
-          app.alert(receivedContent, {
-            actions: [{ icon: "pending", label: "Generating response" }],
-            preface: streamPrefaceString(aiModel, modelsQueriedArray, promptKey, jsonResponseExpected),
-            scrollToEnd: true
-          });
-        } else {
-          stop = !!jsonResponse?.finish_reason?.length || !!jsonResponse?.choices?.[0]?.finish_reason?.length;
-          if (stop) {
-            console.log("Finishing stream for reason", jsonResponse?.finish_reason || jsonResponse?.choices?.[0]?.finish_reason);
-            break;
-          }
-        }
-      }
-    }
-    return { stop, incrementalContents, receivedContent, failedParseContent };
-  }
-  function streamAccumulate2(modelsQueriedArray, promptKey, app, decodedValue, receivedContent, aiModel, jsonResponseExpected, failedParseContent) {
-    const providerEm = providerFromModel(aiModel);
-    let result;
-    switch (providerEm) {
-      case "anthropic":
-        result = parseAnthropicStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected);
-        break;
-      case "gemini":
-        result = parseGeminiStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent);
-        break;
-      case "deepseek":
-      case "grok":
-      case "openai":
-      case "perplexity":
-        result = parseOpenAICompatibleStream(decodedValue, app, receivedContent, aiModel, modelsQueriedArray, promptKey, jsonResponseExpected, failedParseContent);
-        break;
-      default:
-        console.error(`Unknown provider for streaming: ${providerEm}`);
-        result = { stop: true, incrementalContents: [], receivedContent, failedParseContent };
-    }
-    return {
-      abort: result.stop,
-      failedParseContent: result.failedParseContent || null,
-      incrementalContents: result.incrementalContents,
-      receivedContent: result.receivedContent
-    };
-  }
-
   // lib/model-picker.js
   var MAX_CANDIDATE_MODELS = 3;
   async function notePromptResponse(plugin2, app, noteUUID, promptKey, promptParams, {
-    preferredModels = null,
+    preferredModels: preferredModels2 = null,
     confirmInsert = true,
     contentIndex = null,
     rejectedResponses = null,
     allowResponse = null,
     contentIndexText
   } = {}) {
-    preferredModels = preferredModels || await recommendedAiModels(plugin2, app, promptKey);
-    if (!preferredModels.length)
+    preferredModels2 = preferredModels2 || await recommendedAiModels(plugin2, app, promptKey);
+    if (!preferredModels2.length)
       return;
     const startAt = /* @__PURE__ */ new Date();
     const { response, modelUsed } = await sendQuery(
@@ -1577,16 +2580,16 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
       noteUUID,
       promptKey,
       promptParams,
-      { allowResponse, contentIndex, contentIndexText, preferredModels, rejectedResponses }
+      { allowResponse, contentIndex, contentIndexText, preferredModels: preferredModels2, rejectedResponses }
     );
     if (response === null) {
       app.alert("Failed to receive a usable response from AI");
-      console.error("No result was returned from sendQuery with models", preferredModels);
+      console.error("No result was returned from sendQuery with models", preferredModels2);
       return;
     }
     if (confirmInsert) {
       const actions = [];
-      preferredModels.forEach((model) => {
+      preferredModels2.forEach((model) => {
         const modelLabel = model.split(":")[0];
         actions.push({ icon: "chevron_right", label: `Try ${modelLabel}${model === modelUsed ? " again" : ""}` });
       });
@@ -1609,16 +2612,16 @@ Will be utilized after your preliminary approval`,
       console.debug("User chose", selectedValue, "from", actions);
       if (selectedValue === -1) {
         return response;
-      } else if (preferredModels[selectedValue]) {
-        const preferredModel = preferredModels[selectedValue];
+      } else if (preferredModels2[selectedValue]) {
+        const preferredModel2 = preferredModels2[selectedValue];
         const updatedRejects = rejectedResponses || [];
         updatedRejects.push(responseAsText);
-        preferredModels = [preferredModel, ...preferredModels.filter((model) => model !== preferredModel)];
-        console.debug("User chose to try", preferredModel, "next so preferred models are", preferredModels, "Rejected responses now", updatedRejects);
+        preferredModels2 = [preferredModel2, ...preferredModels2.filter((model) => model !== preferredModel2)];
+        console.debug("User chose to try", preferredModel2, "next so preferred models are", preferredModels2, "Rejected responses now", updatedRejects);
         return await notePromptResponse(plugin2, app, noteUUID, promptKey, promptParams, {
           confirmInsert,
           contentIndex,
-          preferredModels,
+          preferredModels: preferredModels2,
           rejectedResponses: updatedRejects
         });
       } else if (Number.isInteger(selectedValue)) {
@@ -1658,14 +2661,14 @@ Will be utilized after your preliminary approval`,
   async function sendQuery(plugin2, app, noteUUID, promptKey, promptParams, {
     contentIndex = null,
     contentIndexText = null,
-    preferredModels = null,
+    preferredModels: preferredModels2 = null,
     rejectedResponses = null,
     allowResponse = null
   } = {}) {
-    preferredModels = (preferredModels || await recommendedAiModels(plugin2, app, promptKey)).filter((n) => n);
-    console.debug("Starting to query", promptKey, "with preferredModels", preferredModels);
+    preferredModels2 = (preferredModels2 || await recommendedAiModels(plugin2, app, promptKey)).filter((n) => n);
+    console.debug("Starting to query", promptKey, "with preferredModels", preferredModels2);
     let modelsQueried = [];
-    for (const aiModel of preferredModels) {
+    for (const aiModel of preferredModels2) {
       const queryPromptParams = await contentfulPromptParams(
         app,
         noteUUID,
@@ -1807,7 +2810,9 @@ Will be utilized after your preliminary approval`,
   }
 
   // lib/functions/chat.js
-  async function initiateChat(plugin2, app, aiModels, messageHistory = []) {
+  init_ai_provider_settings();
+  async function initiateChat(plugin2, app, messageHistory = []) {
+    const aiModels = preferredModels(app);
     let promptHistory;
     if (messageHistory.length) {
       promptHistory = messageHistory;
@@ -1846,6 +2851,7 @@ Will be utilized after your preliminary approval`,
   }
 
   // lib/functions/groceries.js
+  init_app_util();
   function groceryArrayFromContent(content) {
     const lines = content.split("\n");
     const groceryLines = lines.filter((line) => line.match(/^[-*\[]\s/));
@@ -1917,6 +2923,9 @@ Will be utilized after your preliminary approval`,
   }
 
   // lib/functions/image-generator.js
+  init_prompt_strings();
+  init_provider();
+  init_settings();
   async function imageFromPreceding(plugin2, app, apiKey) {
     const note = await app.notes.find(app.context.noteUUID);
     const noteContent = await note.content();
@@ -2042,496 +3051,17 @@ Will be utilized after your preliminary approval`,
     });
   }
 
-  // lib/functions/search-agent.js
-  var SearchAgent = class {
-    // --------------------------------------------------------------------------
-    constructor(app, llmProvider) {
-      this.app = app;
-      this.llm = llmProvider;
-      this.retryCount = 0;
-      this.maxRetries = 2;
-      this.progressCallback = null;
-    }
-    // --------------------------------------------------------------------------
-    // Main search entry point
-    // @param {string} userQuery - The search query (50-5000 words)
-    // @param {Object} options - Optional overrides
-    // @returns {Promise<SearchResult>}
-    async search(userQuery, options = {}) {
-      try {
-        this.emitProgress("Starting search analysis...");
-        const criteria = await this.phase1_analyzeQuery(userQuery, options);
-        const candidates = await this.phase2_collectCandidates(criteria);
-        if (candidates.length === 0) {
-          return this.handleNoResults(criteria);
-        }
-        const analyzedCandidates = await this.phase3_deepAnalysis(candidates, criteria);
-        if (analyzedCandidates.length === 0 && this.retryCount < this.maxRetries) {
-          return this.retryWithBroaderCriteria(userQuery, criteria);
-        }
-        const rankedNotes = await this.phase4_scoreAndRank(analyzedCandidates, criteria, userQuery);
-        const finalResult = await this.phase5_sanityCheck(rankedNotes, criteria, userQuery);
-        return finalResult;
-      } catch (error) {
-        console.error("Search agent error:", error);
-        return {
-          found: false,
-          error: error.message,
-          suggestions: []
-        };
-      }
-    }
-    // --------------------------------------------------------------------------
-    // Phase 1: Extract structured search criteria from natural language
-    async phase1_analyzeQuery(userQuery, options) {
-      this.emitProgress("Phase 1: Analyzing query...");
-      const analysisPrompt = `
-Analyze this note search query and extract structured search criteria.
+  // lib/plugin.js
+  init_search_agent();
 
-User Query: "${userQuery}"
-
-Extract:
-1. PRIMARY_KEYWORDS: 3-5 words most likely to appear in the note TITLE
-2. SECONDARY_KEYWORDS: 5-10 additional words likely in note content
-3. EXACT_PHRASE: If user wants exact text match, extract it (or null)
-4. CRITERIA:
-   - containsPDF: Does user want notes with PDF attachments?
-   - containsImage: Does user want notes with images?
-   - containsURL: Does user want notes with web links?
-5. DATE_FILTER:
-   - type: "created" or "updated" (or null if no date mentioned)
-   - after: ISO date string (YYYY-MM-DD) for earliest date
-6. TAG_REQUIREMENT:
-   - mustHave: Tag that MUST be present (null if none required)
-   - preferred: Tag that"s PREFERRED but not required (null if none)
-7. RESULT_COUNT: 1 for single best match, or N for top N results
-
-Return ONLY valid JSON:
-{
-  "primaryKeywords": ["word1", "word2"],
-  "secondaryKeywords": ["word3", "word4", "word5"],
-  "exactPhrase": null,
-  "criteria": {
-    "containsPDF": false,
-    "containsImage": false,
-    "containsURL": false
-  },
-  "dateFilter": null,
-  "tagRequirement": {
-    "mustHave": null,
-    "preferred": null
-  },
-  "resultCount": 1
-}
-`;
-      const extracted = await this.llm(analysisPrompt);
-      return {
-        ...extracted,
-        ...options,
-        criteria: { ...extracted.criteria, ...options.criteria },
-        tagRequirement: { ...extracted.tagRequirement, ...options.tagRequirement }
-      };
-    }
-    // --------------------------------------------------------------------------
-    // Phase 2: Collect candidate notes using fast API calls
-    async phase2_collectCandidates(criteria) {
-      this.emitProgress("Phase 2: Filtering candidates...");
-      const { primaryKeywords, secondaryKeywords, exactPhrase, dateFilter, tagRequirement } = criteria;
-      let titleCandidates = [];
-      if (primaryKeywords.length > 0) {
-        const titleQuery = primaryKeywords.join(" ");
-        titleCandidates = await this.app.filterNotes({
-          query: titleQuery,
-          tag: tagRequirement.mustHave || void 0
-        });
-        console.log(`Title search for "${titleQuery}": ${titleCandidates.length} results`);
-      }
-      let candidates = titleCandidates;
-      const needsContentSearch = titleCandidates.length < 5 || exactPhrase || criteria.criteria.containsPDF || criteria.criteria.containsImage;
-      if (needsContentSearch) {
-        const contentQuery = exactPhrase || [...primaryKeywords, ...secondaryKeywords.slice(0, 3)].join(" ");
-        const contentCandidates = await this.app.searchNotes(contentQuery);
-        console.log(`Content search for "${contentQuery}": ${contentCandidates.length} results`);
-        candidates = this.mergeCandidates(titleCandidates, contentCandidates);
-      }
-      if (dateFilter) {
-        const dateField = dateFilter.type === "created" ? "created" : "updated";
-        const afterDate = new Date(dateFilter.after);
-        candidates = candidates.filter((note) => {
-          const noteDate = new Date(note[dateField]);
-          return noteDate >= afterDate;
-        });
-        console.log(`After date filter: ${candidates.length} candidates`);
-      }
-      if (candidates.length > 0) {
-        const tagFrequency = this.analyzeTagFrequency(candidates);
-        candidates = candidates.map((note) => {
-          let tagBoost = 1;
-          if (tagRequirement.preferred && note.tags) {
-            const hasPreferredTag = note.tags.some(
-              (tag) => tag === tagRequirement.preferred || tag.startsWith(tagRequirement.preferred + "/")
-            );
-            if (hasPreferredTag)
-              tagBoost = 1.5;
-          }
-          return { ...note, _tagBoost: tagBoost };
-        });
-      }
-      this.emitProgress(`Found ${candidates.length} candidate notes`);
-      return candidates;
-    }
-    // --------------------------------------------------------------------------
-    // Phase 3: Deep analysis of top candidates only
-    async phase3_deepAnalysis(candidates, criteria) {
-      this.emitProgress("Phase 3: Analyzing top candidates...");
-      const preliminaryRanked = this.rankPreliminary(candidates, criteria);
-      const topN = Math.min(8, preliminaryRanked.length);
-      const topCandidates = preliminaryRanked.slice(0, topN);
-      console.log(`Deep analyzing top ${topN} of ${candidates.length} candidates`);
-      const deepAnalysis = await this.parallelLimit(
-        topCandidates.map((note) => () => this.analyzeNoteDeep(note, criteria)),
-        5
-        // Max 5 concurrent API calls
-      );
-      const validCandidates = deepAnalysis.filter((analysis) => {
-        const { checks } = analysis;
-        if (criteria.criteria.containsPDF && !checks.hasPDF)
-          return false;
-        if (criteria.criteria.containsImage && !checks.hasImage)
-          return false;
-        if (criteria.exactPhrase && !checks.hasExactPhrase)
-          return false;
-        if (criteria.criteria.containsURL && !checks.hasURL)
-          return false;
-        return true;
-      });
-      console.log(`${validCandidates.length} candidates passed criteria checks`);
-      this.emitProgress(`${validCandidates.length} notes match all criteria`);
-      return validCandidates;
-    }
-    // --------------------------------------------------------------------------
-    // Deep analyze a single note
-    async analyzeNoteDeep(note, criteria) {
-      const checks = {};
-      let content = null;
-      const needAttachments = criteria.criteria.containsPDF;
-      const needImages = criteria.criteria.containsImage;
-      const needContent = criteria.exactPhrase || criteria.criteria.containsURL;
-      const fetches = [];
-      if (needAttachments) {
-        fetches.push(
-          this.app.notes.find(note.uuid).then((n) => n.attachments()).then((attachments) => {
-            checks.hasPDF = attachments.some(
-              (a) => a.type === "application/pdf" || a.name.endsWith(".pdf")
-            );
-            checks.attachmentCount = attachments.length;
-          })
-        );
-      }
-      if (needImages) {
-        fetches.push(
-          this.app.notes.find(note.uuid).then((n) => n.images()).then((images) => {
-            checks.hasImage = images.length > 0;
-            checks.imageCount = images.length;
-          })
-        );
-      }
-      if (needContent) {
-        fetches.push(
-          this.app.notes.find(note.uuid).then((n) => n.content()).then((noteContent) => {
-            content = noteContent;
-            if (criteria.exactPhrase) {
-              checks.hasExactPhrase = noteContent.includes(criteria.exactPhrase);
-            }
-            if (criteria.criteria.containsURL) {
-              checks.hasURL = /https?:\/\/[^\s]+/.test(noteContent);
-              const urls = noteContent.match(/https?:\/\/[^\s]+/g);
-              checks.urlCount = urls ? urls.length : 0;
-            }
-          })
-        );
-      }
-      await Promise.all(fetches);
-      return {
-        note,
-        content: needContent ? content : null,
-        contentPreview: content ? content.substring(0, 500) : null,
-        checks
-      };
-    }
-    // --------------------------------------------------------------------------
-    // Phase 4: Score and rank candidates using LLM
-    async phase4_scoreAndRank(analyzedCandidates, criteria, userQuery) {
-      this.emitProgress("Phase 4: Ranking results...");
-      const scoringPrompt = `
-You are scoring note search results. Original query: "${userQuery}"
-
-Extracted criteria:
-${JSON.stringify(criteria, null, 2)}
-
-Score each candidate note 0-10 on these dimensions:
-1. TITLE_RELEVANCE: How well does the note title match the search intent?
-2. KEYWORD_DENSITY: How concentrated are the keywords in the content?
-3. CRITERIA_MATCH: Does it meet all the hard requirements (PDF/image/URL/exact phrase)?
-4. TAG_ALIGNMENT: Does it have relevant or preferred tags?
-5. RECENCY: Is it recent enough (if recency matters)?
-
-Candidates to score:
-${analyzedCandidates.map((candidate, index) => `
-${index}. "${candidate.note.name}"
-   UUID: ${candidate.note.uuid}
-   Tags: ${candidate.note.tags?.join(", ") || "none"}
-   Updated: ${candidate.note.updated}
-   ${candidate.contentPreview ? `Content preview: ${candidate.contentPreview}` : "No content fetched"}
-   Checks: ${JSON.stringify(candidate.checks)}
-`).join("\n")}
-
-Return ONLY valid JSON array:
-[
-  {
-    "noteIndex": 0,
-    "titleRelevance": 8,
-    "keywordDensity": 7,
-    "criteriaMatch": 10,
-    "tagAlignment": 6,
-    "recency": 5,
-    "reasoning": "Brief explanation of why this note matches"
+  // lib/functions/search-prompts.js
+  async function userSearchCriteria(app) {
+    const userQuery = await app.prompt("Enter your search criteria");
+    return { userQuery };
   }
-]
-`;
-      const scores = await this.llm(scoringPrompt);
-      const weights = {
-        titleRelevance: 0.3,
-        keywordDensity: 0.25,
-        criteriaMatch: 0.2,
-        tagAlignment: 0.15,
-        recency: 0.1
-      };
-      const rankedNotes = scores.map((score) => {
-        const finalScore = score.titleRelevance * weights.titleRelevance + score.keywordDensity * weights.keywordDensity + score.criteriaMatch * weights.criteriaMatch + score.tagAlignment * weights.tagAlignment + score.recency * weights.recency;
-        return {
-          note: analyzedCandidates[score.noteIndex].note,
-          finalScore: Math.round(finalScore * 10) / 10,
-          // Round to 1 decimal
-          scoreBreakdown: score,
-          checks: analyzedCandidates[score.noteIndex].checks
-        };
-      }).sort((a, b) => b.finalScore - a.finalScore);
-      return rankedNotes;
-    }
-    // --------------------------------------------------------------------------
-    // Phase 5: Sanity check and potential retry
-    async phase5_sanityCheck(rankedNotes, criteria, userQuery) {
-      this.emitProgress("Phase 5: Verifying results...");
-      if (rankedNotes.length === 0) {
-        return this.handleNoResults(criteria);
-      }
-      const topResult = rankedNotes[0];
-      if (topResult.finalScore >= 9.5) {
-        this.emitProgress("Found excellent match!");
-        return this.formatResult(rankedNotes, criteria.resultCount);
-      }
-      const sanityPrompt = `
-Original query: "${userQuery}"
-
-Top recommended note:
-- Title: "${topResult.note.name}"
-- Score: ${topResult.finalScore}/10
-- Tags: ${topResult.note.tags?.join(", ") || "none"}
-- Reasoning: ${topResult.scoreBreakdown.reasoning}
-
-Does this genuinely seem like what the user is looking for?
-
-Consider:
-1. Does the title make sense given the query?
-2. Is the score reasonable (>6.0 suggests good match)?
-3. Are there obvious mismatches?
-
-Return ONLY valid JSON:
-{
-  "confident": true,
-  "concerns": null,
-  "suggestAction": "accept"
-}
-
-Or if not confident:
-{
-  "confident": false,
-  "concerns": "Explanation of concern",
-  "suggestAction": "retry_broader" | "retry_narrower" | "insufficient_data"
-}
-`;
-      const sanityCheck = await this.llm(sanityPrompt);
-      if (sanityCheck.confident || this.retryCount >= this.maxRetries) {
-        this.emitProgress("Search complete!");
-        return this.formatResult(rankedNotes, criteria.resultCount);
-      }
-      console.log(`Sanity check failed: ${sanityCheck.concerns}`);
-      this.retryCount++;
-      if (sanityCheck.suggestAction === "retry_broader") {
-        return this.retryWithBroaderCriteria(userQuery, criteria);
-      } else if (sanityCheck.suggestAction === "insufficient_data") {
-        return {
-          found: false,
-          message: "No notes found matching your criteria",
-          suggestions: rankedNotes.slice(0, 3).map((r) => ({
-            note: r.note,
-            score: r.finalScore,
-            reason: "Close match but doesn't fully meet criteria"
-          }))
-        };
-      }
-      return this.formatResult(rankedNotes, criteria.resultCount);
-    }
-    // --------------------------------------------------------------------------
-    formatResult(rankedNotes, resultCount) {
-      if (resultCount === 1) {
-        const best = rankedNotes[0];
-        return {
-          found: true,
-          note: {
-            uuid: best.note.uuid,
-            name: best.note.name,
-            url: `amplenote://note/${best.note.uuid}`,
-            tags: best.note.tags || [],
-            updated: best.note.updated,
-            created: best.note.created
-          },
-          confidence: best.finalScore,
-          matchDetails: {
-            titleRelevance: best.scoreBreakdown.titleRelevance,
-            reasoning: best.scoreBreakdown.reasoning,
-            checks: best.checks
-          },
-          scoreBreakdown: best.scoreBreakdown
-        };
-      } else {
-        return {
-          found: true,
-          count: Math.min(resultCount, rankedNotes.length),
-          notes: rankedNotes.slice(0, resultCount).map((r, i) => ({
-            rank: i + 1,
-            score: r.finalScore,
-            note: {
-              uuid: r.note.uuid,
-              name: r.note.name,
-              url: `amplenote://note/${r.note.uuid}`,
-              tags: r.note.tags || [],
-              updated: r.note.updated
-            },
-            reasoning: r.scoreBreakdown.reasoning,
-            checks: r.checks
-          }))
-        };
-      }
-    }
-    // --------------------------------------------------------------------------
-    // Helper: Preliminary ranking without LLM
-    rankPreliminary(candidates, criteria) {
-      return candidates.map((note) => {
-        let score = 0;
-        const titleLower = (note.name || "").toLowerCase();
-        criteria.primaryKeywords.forEach((kw) => {
-          if (titleLower.includes(kw.toLowerCase())) {
-            score += 10;
-          }
-        });
-        criteria.secondaryKeywords.slice(0, 3).forEach((kw) => {
-          if (titleLower.includes(kw.toLowerCase())) {
-            score += 3;
-          }
-        });
-        score += (note._tagBoost || 1) * 5;
-        if (criteria.dateFilter) {
-          const daysSinceUpdate = (Date.now() - new Date(note.updated)) / (1e3 * 60 * 60 * 24);
-          score += Math.max(0, 5 - daysSinceUpdate / 30);
-        }
-        return { note, preliminaryScore: score };
-      }).sort((a, b) => b.preliminaryScore - a.preliminaryScore).map((item) => item.note);
-    }
-    // --------------------------------------------------------------------------
-    mergeCandidates(list1, list2) {
-      const uuidSet = new Set(list1.map((n) => n.uuid));
-      const unique = list2.filter((n) => !uuidSet.has(n.uuid));
-      return [...list1, ...unique];
-    }
-    // --------------------------------------------------------------------------
-    // Helper: Analyze tag frequency in candidates
-    analyzeTagFrequency(candidates) {
-      const frequency = {};
-      candidates.forEach((note) => {
-        (note.tags || []).forEach((tag) => {
-          frequency[tag] = (frequency[tag] || 0) + 1;
-        });
-      });
-      return frequency;
-    }
-    // --------------------------------------------------------------------------
-    // Helper: Parallel execution with concurrency limit
-    async parallelLimit(tasks, limit) {
-      const results = [];
-      const executing = [];
-      for (const task of tasks) {
-        const promise = task().then((result) => {
-          executing.splice(executing.indexOf(promise), 1);
-          return result;
-        });
-        results.push(promise);
-        executing.push(promise);
-        if (executing.length >= limit) {
-          await Promise.race(executing);
-        }
-      }
-      return Promise.all(results);
-    }
-    // --------------------------------------------------------------------------
-    // Retry with broader search criteria
-    async retryWithBroaderCriteria(userQuery, originalCriteria) {
-      console.log("Retrying with broader criteria...");
-      this.emitProgress("Broadening search criteria...");
-      const broaderCriteria = {
-        ...originalCriteria,
-        primaryKeywords: [
-          ...originalCriteria.primaryKeywords,
-          ...originalCriteria.secondaryKeywords.slice(0, 2)
-        ],
-        tagRequirement: {
-          mustHave: null,
-          // Remove hard tag requirement
-          preferred: originalCriteria.tagRequirement.mustHave || originalCriteria.tagRequirement.preferred
-        }
-      };
-      return this.search(userQuery, broaderCriteria);
-    }
-    // --------------------------------------------------------------------------
-    // Handle no results found
-    handleNoResults(criteria) {
-      return {
-        found: false,
-        message: "No notes found matching your criteria",
-        attemptedKeywords: criteria.primaryKeywords,
-        attemptedFilters: {
-          dateFilter: criteria.dateFilter,
-          tagRequirement: criteria.tagRequirement,
-          criteria: criteria.criteria
-        },
-        suggestion: "Try removing some filters or using broader search terms"
-      };
-    }
-    // --------------------------------------------------------------------------
-    emitProgress(message) {
-      console.log(`[SearchAgent] ${message}`);
-      if (this.progressCallback) {
-        this.progressCallback(message);
-      }
-    }
-    // --------------------------------------------------------------------------
-    onProgress(callback) {
-      this.progressCallback = callback;
-    }
-  };
 
   // lib/functions/suggest-tasks.js
+  init_app_util();
   async function taskArrayFromSuggestions(plugin2, app, contentIndexText) {
     const allowResponse = (response2) => {
       const validJson = typeof response2 === "object" && (response2.result || response2.response?.result || response2.input?.response?.result || response2.input?.result);
@@ -2648,6 +3178,8 @@ ${taskArray.join("\n")}`);
   }
 
   // lib/plugin.js
+  init_ai_provider_settings();
+  init_fetch_json();
   var plugin = {
     // --------------------------------------------------------------------------------------
     constants: {
@@ -2667,11 +3199,11 @@ ${taskArray.join("\n")}`);
     appOption: {
       // --------------------------------------------------------------------------
       [ADD_PROVIDER_API_KEY_LABEL]: async function(app) {
-        const preferredModels = await aiModelFromUserIntervention(this, app, { defaultProvider: null });
-        if (preferredModels?.length) {
-          app.alert(`\u2705 Successfully added API key!${preferredModels?.length > 1 ? `
+        const preferredModels2 = await aiModelFromUserIntervention(this, app, { defaultProvider: null });
+        if (preferredModels2?.length) {
+          app.alert(`\u2705 Successfully added API key!${preferredModels2?.length > 1 ? `
 
-Preferred models are now set to "${preferredModels.join(`", "`)}".` : ""}`);
+Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
         }
       },
       // --------------------------------------------------------------------------
@@ -2698,7 +3230,12 @@ Preferred models are now set to "${preferredModels.join(`", "`)}".` : ""}`);
       },
       // --------------------------------------------------------------------------
       [SEARCH_USING_AGENT_LABEL]: async function(app) {
-        const searchAgent = new SearchAgent(app);
+        const searchAgent = new SearchAgent(app, this);
+        const { userQuery, options } = await userSearchCriteria(app);
+        searchAgent.onProgress((progressText) => {
+          app.alert(progressText);
+        });
+        await searchAgent.search(userQuery);
       },
       // --------------------------------------------------------------------------
       "Show AI Usage by Model": async function(app) {
@@ -2722,22 +3259,22 @@ ${callCountByModelText}
       "Answer": async function(app) {
         let aiModels = await recommendedAiModels(this, app, "answer");
         const options = aiModels.map((model) => ({ label: model, value: model }));
-        const [instruction, preferredModel] = await app.prompt(QUESTION_ANSWER_PROMPT, {
+        const [instruction, userPickedModel] = await app.prompt(QUESTION_ANSWER_PROMPT, {
           inputs: [
             { type: "text", label: "Question", placeholder: "What's the meaning of life in 500 characters or less?" },
             {
               type: "radio",
               label: `AI Model${this.lastModelUsed ? `. Defaults to last used` : ""}`,
               options,
-              value: this.lastModelUsed || aiModels?.at(0)
+              value: preferredModel(app, this.lastModelUsed)
             }
           ]
         });
-        console.debug("Instruction", instruction, "preferredModel", preferredModel);
+        console.debug("Instruction", instruction, "preferredModel", userPickedModel);
         if (!instruction)
           return;
-        if (preferredModel)
-          aiModels = [preferredModel].concat(aiModels.filter((model) => model !== preferredModel));
+        if (userPickedModel)
+          aiModels = [userPickedModel].concat(aiModels.filter((model) => model !== userPickedModel));
         return await this._noteOptionResultPrompt(
           app,
           null,
@@ -2748,8 +3285,7 @@ ${callCountByModelText}
       },
       // --------------------------------------------------------------------------
       "Converse (chat) with AI": async function(app) {
-        const aiModels = await recommendedAiModels(plugin, app, "chat");
-        await initiateChat(this, app, aiModels);
+        await initiateChat(this, app);
       }
     },
     // --------------------------------------------------------------------------
@@ -2764,14 +3300,14 @@ ${callCountByModelText}
       },
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PRECEDING_LABEL]: async function(app) {
-        const apiKey = await apiKeyFromAppOrUser(this, app, "openai");
+        const apiKey = await apiKeyFromAppOrUser(app, "openai");
         if (apiKey) {
           await imageFromPreceding(this, app, apiKey);
         }
       },
       // --------------------------------------------------------------------------
       [IMAGE_FROM_PROMPT_LABEL]: async function(app) {
-        const apiKey = await apiKeyFromAppOrUser(this, app, "openai");
+        const apiKey = await apiKeyFromAppOrUser(app, "openai");
         if (apiKey) {
           await imageFromPrompt(this, app, apiKey);
         }
@@ -2879,14 +3415,14 @@ ${callCountByModelText}
     // Waypoint between the oft-visited notePromptResponse, and various actions that might want to insert the
     // AI response through a variety of paths
     // @param {object} promptKeyParams - Basic instructions from promptKey to help generate user messages
-    async _noteOptionResultPrompt(app, noteUUID, promptKey, promptKeyParams, { preferredModels = null } = {}) {
+    async _noteOptionResultPrompt(app, noteUUID, promptKey, promptKeyParams, { preferredModels: preferredModels2 = null } = {}) {
       let aiResponse = await notePromptResponse(
         this,
         app,
         noteUUID,
         promptKey,
         promptKeyParams,
-        { preferredModels, confirmInsert: false }
+        { preferredModels: preferredModels2, confirmInsert: false }
       );
       if (aiResponse?.length) {
         const trimmedResponse = cleanTextFromAnswer(aiResponse);
@@ -2923,11 +3459,11 @@ ${trimmedResponse || aiResponse}`, {
             app.replaceNoteContent({ uuid: noteUUID }, aiResponse);
             break;
           case "followup":
-            const aiModel = this.lastModelUsed || (preferredModels?.length ? preferredModels[0] : null);
+            const aiModel = preferredModel(app, this.lastModelUsed);
             const promptParams = await contentfulPromptParams(app, noteUUID, promptKey, promptKeyParams, aiModel);
             const systemUserMessages = promptsFromPromptKey(promptKey, promptParams, [], aiModel);
             const messages = systemUserMessages.concat({ role: "assistant", content: trimmedResponse });
-            return await initiateChat(this, app, preferredModels?.length ? preferredModels : [aiModel], messages);
+            return await initiateChat(this, app, preferredModels2?.length ? preferredModels2 : [aiModel], messages);
         }
         return aiResponse;
       }
@@ -2972,7 +3508,9 @@ ${trimmedResponse || aiResponse}`, {
           return selectedValue;
         }
       } else {
-        const followUp = apiKeyFromApp(this, app, "openai")?.length ? "Consider adding an OpenAI API key to your plugin settings?" : "Try again?";
+        const model = preferredModel(app, this.lastModelUsed);
+        const providerEm = providerFromModel(model);
+        const followUp = apiKeyFromApp(app, providerEm)?.length ? `Consider adding ${providerEm} API key to your plugin settings?` : "Try again?";
         app.alert(`Unable to get a usable response from available AI models. ${followUp}`);
       }
       return null;
@@ -2998,4 +3536,5 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-})();
+  return plugin;
+})()
