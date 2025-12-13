@@ -227,7 +227,12 @@ export function mockNote(content, name, uuid, options = {}) {
   note._images = options.images || [];
   note._attachments = options.attachments || [];
 
-  note.content = () => note.body;
+  note.content = async () => note.body;
+
+  // --------------------------------------------------------------------------------------
+  note.attachments = async () => {
+    return note._attachments;
+  }
 
   // --------------------------------------------------------------------------------------
   note.insertContent = async (newContent, options = {}) => {
@@ -285,8 +290,8 @@ export function mockNote(content, name, uuid, options = {}) {
   }
 
   // --------------------------------------------------------------------------------------
-  note.attachments = async () => {
-    return note._attachments;
+  note.url = async () => {
+    return `https://www.amplenote.com/notes/${ note.uuid }`;
   }
 
   return note;

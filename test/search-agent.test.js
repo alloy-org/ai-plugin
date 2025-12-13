@@ -111,13 +111,6 @@ describe("Search Agent", () => {
 
     const result = await searchAgent.search(userQuery);
 
-    // Verify we found the correct note
-    expect(result.found).toBe(true);
-    expect(result.note).toBeDefined();
-    expect(result.note.uuid).toBe("note-003");
-    expect(result.note.name).toBe("Street Food Discovery");
-    expect(result.confidence).toBeGreaterThan(7); // Should have high confidence
-
     // Verify summary note was created
     expect(result.summaryNote).toBeDefined();
     expect(result.summaryNote.uuid).toBeDefined();
@@ -130,6 +123,14 @@ describe("Search Agent", () => {
     expect(summaryNote).toBeDefined();
     expect(summaryNote.body).toContain("Street Food Discovery");
     expect(summaryNote.body).toContain("note-003");
+
+    // Verify we found the correct note
+    expect(result.found).toBe(true);
+    expect(result.note).toBeDefined();
+    expect(result.note.uuid).toBe("note-003");
+    expect(result.note.name).toBe("Street Food Discovery");
+    expect(result.confidence).toBeGreaterThan(7); // Should have high confidence
+
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
