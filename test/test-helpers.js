@@ -107,7 +107,12 @@ export function mockApp(notes) {
       await seedNote.replaceContent(newContent, sectionObject);
     }
   });
-  app.createNote = jest.fn();
+
+  app.createNote = jest.fn().mockImplementation(async (name, tags = []) => {
+    const newNote = mockNote("", name, `note-created-${ Date.now() }`, { tags });
+    allNotes.push(newNote);
+    return newNote;
+  });
 
   // Helper function to find a note by handle (can be UUID string or note object)
   const findNoteByHandle = (noteHandle) => {
