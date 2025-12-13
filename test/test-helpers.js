@@ -166,10 +166,11 @@ export function mockApp(notes) {
     }
 
     if (query) {
-      const queryLower = query.toLowerCase();
+      const queryWords = query.toLowerCase().split(/\s+/);
       results = results.filter(note => {
         const nameLower = (note.name || "").toLowerCase();
-        return nameLower.includes(queryLower);
+        // Match if any query word appears in the title
+        return queryWords.some(word => nameLower.includes(word));
       });
     }
 
@@ -179,16 +180,20 @@ export function mockApp(notes) {
   // searchNotes - searches note content
   app.searchNotes = jest.fn().mockImplementation(async (query) => {
     const queryLower = query.toLowerCase();
+    const queryWords = queryLower.split(/\s+/);
     return app._allNotes.filter(note => {
       const contentLower = (note.body || "").toLowerCase();
       const nameLower = (note.name || "").toLowerCase();
-      return contentLower.includes(queryLower) || nameLower.includes(queryLower);
+      const combined = contentLower + " " + nameLower;
+      // Match if the query appears as a phrase, or if all words appear
+      return combined.includes(queryLower) ||
+        queryWords.every(word => combined.includes(word));
     });
   });
 
   if (allNotes.length > 0) {
     const noteFunction = jest.fn();
-    noteFunction.mockImplementation(noteHandle => {
+    noteFunction.mockImplementation(async (noteHandle) => {
       return findNoteByHandle(noteHandle) || null;
     });
 

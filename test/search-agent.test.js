@@ -34,8 +34,8 @@ describe("Search Agent", () => {
       // Note 2: THE MATCH - Has both image and sandwich with mystery meat in New York
       mockNote(
         "# Food Adventures in NYC\n\nFound an amazing street vendor in Manhattan. Had the most " +
-        "delicious sandwich with some mystery meat that I couldn't identify, but it was incredible! " +
-        "Secret family recipe. Need to find this cart again!\n\nSpicy tangy sauce, perfectly toasted.",
+        "delicious sandwich with bologna that I couldn't identify, but it was incredible! " +
+        "Secret family recipe from New York. Need to find this cart again!\n\nSpicy tangy sauce.",
         "Street Food Discovery", "note-003", {
           images: [
             { url: "https://example.com/sandwich.jpg", width: 800, height: 600 },
@@ -107,7 +107,7 @@ describe("Search Agent", () => {
 
     // Test query: find note with image and sandwich with mystery meat in New York
     const userQuery =
-      "Find the note with an image that mentions a delicious sandwich with mystery meat in New York";
+      "Find the note with an image that mentions a sandwich with mystery meat in New York";
 
     const result = await searchAgent.search(userQuery);
 
@@ -122,11 +122,11 @@ describe("Search Agent", () => {
   // --------------------------------------------------------------------------------------
   it("should filter candidates by tag requirement", async () => {
     const notes = [
-      mockNote("# Tagged Note\n\nThis has the food tag.", "Food Note", "note-tag-001",
-        { tags: ["food", "recipes"] }
+      mockNote("# Food Recipes\n\nMy collection of cooking recipes and meal ideas.", "Food Note",
+        "note-tag-001", { tags: ["food", "recipes"] }
       ),
-      mockNote("# Untagged Note\n\nTalks about food but has no tags.", "Plain Note", "note-tag-002",
-        { tags: [] }
+      mockNote("# Plain Note\n\nTalks about food and cooking but has no tags.", "Plain Note",
+        "note-tag-002", { tags: [] }
       )
     ];
 
