@@ -100,7 +100,7 @@ describe("Search Agent", () => {
 
     const app = mockApp(notes);
     mockAlertAccept(app);
-    const testModel = defaultTestModel("anthropic");
+    const testModel = defaultTestModel("gemini");
     app.settings[AI_MODEL_LABEL] = testModel;
 
     // Create search agent
