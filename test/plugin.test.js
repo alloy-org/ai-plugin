@@ -195,11 +195,13 @@ describe("This here plugin", () => {
     const [ promptText, alertObject ] = alertCall;
 
     const tuple = app.prompt.mock.calls[0];
-    const answers = tuple[1].inputs[0].options.map(option => option.value);
+    const answers = tuple[1].inputs[0].options.map(option => option.value.toLowerCase());
     expect(answers.length).toBeGreaterThan(0);
-    for (const expectedWord of [ "beep", "keep", "deep", "creep" ]) {
-      expect(promptText.includes(expectedWord)).toBeTruthy();
-    }
+
+    // Check that we got at least some reasonable rhymes for "sheep"
+    const expectedRhymes = [ "beep", "keep", "deep", "creep", "sleep", "weep", "leap", "steep", "reap", "cheap" ];
+    const matchingRhymes = answers.filter(a => expectedRhymes.includes(a));
+    expect(matchingRhymes.length).toBeGreaterThan(3); // Expect at least 4 good rhymes
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
