@@ -1,5 +1,6 @@
 import fs from "fs"
-import { PROVIDER_SETTING_KEY_LABELS, settingKeyLabel } from "../lib/constants/settings"
+import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "constants/provider"
+import { PROVIDER_SETTING_KEY_LABELS, settingKeyLabel } from "constants/settings"
 import dotenv from "dotenv"
 import fetch from "isomorphic-fetch"
 import { jest } from "@jest/globals"
@@ -24,6 +25,11 @@ export function aiProviderTestKey(providerEm) {
     case "openai": return process.env.OPENAI_API_KEY;
     case "perplexity": return process.env.PERPLEXITY_API_KEY;
   }
+}
+
+// --------------------------------------------------------------------------------------
+export function defaultTestModel(providerEm) {
+  return PROVIDER_DEFAULT_MODEL_IN_TEST[providerEm];
 }
 
 // --------------------------------------------------------------------------------------
