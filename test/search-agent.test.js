@@ -100,14 +100,14 @@ describe("Search Agent", () => {
 
     const app = mockApp(notes);
     mockAlertAccept(app);
-    app.settings[AI_MODEL_LABEL] = defaultTestModel("anthropic");
+    const testModel = defaultTestModel("anthropic");
+    app.settings[AI_MODEL_LABEL] = testModel;
 
     // Create search agent
     const searchAgent = new SearchAgent(app, plugin);
 
     // Test query: find note with image and sandwich with mystery meat in New York
-    const userQuery =
-      "Find the note with an image that mentions a sandwich with mystery meat in New York";
+    const userQuery = "Find the note with an image that mentions a sandwich with mystery meat in New York";
 
     const result = await searchAgent.search(userQuery);
 
@@ -117,6 +117,19 @@ describe("Search Agent", () => {
     expect(result.note.uuid).toBe("note-003");
     expect(result.note.name).toBe("Street Food Discovery");
     expect(result.confidence).toBeGreaterThan(7); // Should have high confidence
+
+    // Verify summary note was created
+    expect(result.summaryNote).toBeDefined();
+    expect(result.summaryNote.uuid).toBeDefined();
+
+    // Verify the summary note title includes the AI model name
+    expect(result.summaryNote.name).toContain(testModel);
+
+    // Verify the summary note content includes the expected result note
+    const summaryNote = app._allNotes.find(n => n.uuid === result.summaryNote.uuid);
+    expect(summaryNote).toBeDefined();
+    expect(summaryNote.body).toContain("Street Food Discovery");
+    expect(summaryNote.body).toContain("note-003");
   }, AWAIT_TIME);
 
   // --------------------------------------------------------------------------------------
