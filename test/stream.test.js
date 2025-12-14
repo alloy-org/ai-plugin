@@ -52,7 +52,7 @@ describe("Mocked streaming", () => {
       const { app, note } = mockAppWithContent("Once upon a time there was a very special baby who was born a manager");
 
       mockAlertAccept(app);
-      app.settings[AI_MODEL_LABEL] = "gpt-4o";
+      app.settings[AI_MODEL_LABEL] = PROVIDER_DEFAULT_MODEL_IN_TEST["openai"];
       await plugin.replaceText["Thesaurus"].run(app, "manager");
 
       const tuple = app.prompt.mock.calls[0];
@@ -107,7 +107,7 @@ describe("Mocked streaming", () => {
       const { app, note } = mockAppWithContent("Some will question: Who ya daddy?");
 
       mockAlertAccept(app);
-      app.settings[AI_MODEL_LABEL] = "gpt-4o";
+      app.settings[AI_MODEL_LABEL] = PROVIDER_DEFAULT_MODEL_IN_TEST["openai"];
       await plugin.replaceText["Thesaurus"].run(app, "question");
 
       const tuple = app.prompt.mock.calls[0];
@@ -115,7 +115,7 @@ describe("Mocked streaming", () => {
 
       // Array(2) [{"result": ["Inquery", "Interrogation", "Inquisiti…g ", "Probe ", "Examination ", "Investigation "]},
       //   {"result": ["Dilemma", "Enquiry", "Grill", "Cross-examine", "Raise"]}]
-      expect(answers).toEqual(["inquery", "interrogation", "inquisition", "questioning", "probe", "examination",
+      expect(answers).toEqual(["inquiry", "interrogation", "inquisition", "questioning", "probe", "examination",
         "investigation", "dilemma", "enquiry", "grill", "cross-examine", "raise" ]);
     }, AWAIT_TIME);
   });
