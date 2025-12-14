@@ -12,7 +12,8 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const PLUGIN_INTERFACES = [ "appOption", "dailyJotOption", "imageOption", "insertText", "linkOption", "noteOption", "replaceText" ];
+const PLUGIN_INTERFACES = [ "appOption", "dailyJotOption", "imageOption", "insertText", "linkOption",
+  "noteOption", "renderEmbed", "replaceText" ];
 export const LOCAL_MODELS_RUNNING = process.env.LOCAL_MODELS !== "suspended";
 
 // --------------------------------------------------------------------------------------
@@ -69,10 +70,10 @@ export function mockPlugin() {
     }
   });
 
-  plugin.constants.isTestEnvironment = true;
-  plugin.ollamaModelsFound = null;
   plugin.callCountByModel = {};
+  plugin.constants.isTestEnvironment = true;
   plugin.errorCountByModel = {};
+  plugin.ollamaModelsFound = null;
 
   // If LOCAL_MODELS is suspended, disable checking for local models (Ollama)
   if (!LOCAL_MODELS_RUNNING) {
@@ -90,12 +91,16 @@ export function mockAppWithContent(content) {
 }
 
 // --------------------------------------------------------------------------------------
-export function mockApp(notes) {
+export function mockApp(notes, { plugin = null } = {}) {
   // Accept either a single note or an array of notes
   const allNotes = Array.isArray(notes) ? notes : (notes ? [notes] : []);
   const seedNote = allNotes[0] || null;
 
   const app = {};
+
+  // Store all notes for search functionality
+  app._allNotes = allNotes;
+
   app.alert = jest.fn().mockImplementation(async (text, options = {}) => {
     console.debug("Alert was called", text);
   });
@@ -120,47 +125,6 @@ export function mockApp(notes) {
     return allNotes.find(n => n.uuid === uuid);
   };
 
-  app.getNoteContent = jest.fn().mockImplementation(async (noteHandle) => {
-    const note = findNoteByHandle(noteHandle);
-    return note ? note.content() : null;
-  });
-
-  app.insertNoteContent = jest.fn().mockImplementation(async (noteHandle, content) => {
-    const note = findNoteByHandle(noteHandle);
-    if (note) {
-      note.body += content;
-    }
-  });
-
-  app.navigate = jest.fn();
-  app.prompt = jest.fn().mockImplementation(async (text, options = {}) => {
-    console.error("Prompting user", prompt, "You probably wanted to mock this so it would respond?");
-  });
-  app.notes = {};
-  app.notes.find = jest.fn().mockResolvedValue(null);
-  app.notes.filter = jest.fn().mockResolvedValue(null);
-  app.setSetting = jest.fn().mockResolvedValue(null);
-  app.setSetting.mockImplementation((key, value) => {
-    app.settings[key] = value;
-  });
-
-  app.replaceNoteContent = jest.fn().mockImplementation(async (noteHandle, content) => {
-    const note = findNoteByHandle(noteHandle);
-    if (note) {
-      note.body = content;
-    }
-  });
-
-  app.settings = {};
-  for (const providerEm of Object.keys(PROVIDER_SETTING_KEY_LABELS)) {
-    if (aiProviderTestKey(providerEm)) {
-      app.settings[settingKeyLabel(providerEm)] = aiProviderTestKey(providerEm);
-    }
-  }
-
-  // Store all notes for search functionality
-  app._allNotes = allNotes;
-
   // filterNotes - searches note titles and filters by tags
   app.filterNotes = jest.fn().mockImplementation(async (options = {}) => {
     const { query, tag } = options;
@@ -181,6 +145,44 @@ export function mockApp(notes) {
 
     return results;
   });
+
+  app.getNoteContent = jest.fn().mockImplementation(async (noteHandle) => {
+    const note = findNoteByHandle(noteHandle);
+    return note ? note.content() : null;
+  });
+
+  app.insertNoteContent = jest.fn().mockImplementation(async (noteHandle, content) => {
+    const note = findNoteByHandle(noteHandle);
+    if (note) {
+      note.body += content;
+    }
+  });
+
+  app.navigate = jest.fn();
+  app.prompt = jest.fn().mockImplementation(async (text, options = {}) => {
+    console.error("Prompting user", prompt, "You probably wanted to mock this so it would respond?");
+  });
+  app.notes = {};
+  app.notes.find = jest.fn().mockResolvedValue(null);
+  app.notes.filter = jest.fn().mockResolvedValue(null);
+  app.openEmbed = jest.fn().mockImplementation(async () => plugin?.renderEmbed(app))
+  app.replaceNoteContent = jest.fn().mockImplementation(async (noteHandle, content) => {
+    const note = findNoteByHandle(noteHandle);
+    if (note) {
+      note.body = content;
+    }
+  });
+  app.setSetting = jest.fn().mockResolvedValue(null);
+  app.setSetting.mockImplementation((key, value) => {
+    app.settings[key] = value;
+  });
+
+  app.settings = {};
+  for (const providerEm of Object.keys(PROVIDER_SETTING_KEY_LABELS)) {
+    if (aiProviderTestKey(providerEm)) {
+      app.settings[settingKeyLabel(providerEm)] = aiProviderTestKey(providerEm);
+    }
+  }
 
   // searchNotes - searches note content
   app.searchNotes = jest.fn().mockImplementation(async (query) => {
