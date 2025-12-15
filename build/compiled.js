@@ -15,9 +15,6 @@
   };
 
   // lib/app-util.js
-  function truncate(text, limit) {
-    return text.length > limit ? text.slice(0, limit) : text;
-  }
   function arrayFromJumbleResponse(response) {
     if (!response)
       return null;
@@ -42,69 +39,6 @@
     }
     return properArray;
   }
-  async function trimNoteContentFromAnswer(app, answer, { replaceToken = null, replaceIndex = null } = {}) {
-    const noteUUID = app.context.noteUUID;
-    const note = await app.notes.find(noteUUID);
-    const noteContent = await note.content();
-    let refinedAnswer = answer;
-    if (replaceIndex || replaceToken) {
-      replaceIndex = replaceIndex || noteContent.indexOf(replaceToken);
-      const upToReplaceToken = noteContent.substring(0, replaceIndex - 1);
-      const substring = upToReplaceToken.match(/(?:[\n\r.]|^)(.*)$/)?.[1];
-      const maxSentenceStartLength = 100;
-      const sentenceStart = !substring || substring.length > maxSentenceStartLength ? null : substring;
-      if (replaceToken) {
-        refinedAnswer = answer.replace(replaceToken, "").trim();
-        if (sentenceStart && sentenceStart.trim().length > 1) {
-          console.debug(`Replacing sentence start fragment: "${sentenceStart}"`);
-          refinedAnswer = refinedAnswer.replace(sentenceStart, "");
-        }
-        const afterTokenIndex = replaceIndex + replaceToken.length;
-        const afterSentence = noteContent.substring(afterTokenIndex + 1, afterTokenIndex + 100).trim();
-        if (afterSentence.length) {
-          const afterSentenceIndex = refinedAnswer.indexOf(afterSentence);
-          if (afterSentenceIndex !== -1) {
-            console.error("LLM response seems to have returned content after prompt. Truncating");
-            refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
-          }
-        }
-      }
-    }
-    const originalLines = noteContent.split("\n").map((w) => w.trim());
-    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim())).join("\n");
-    const withoutJunkLines = cleanTextFromAnswer(withoutOriginalLines);
-    console.debug(`Answer originally ${answer.length} length, refined answer length ${refinedAnswer.length} ("${refinedAnswer}"). Without repeated lines ${withoutJunkLines.length} length`);
-    return withoutJunkLines.trim();
-  }
-  function balancedJsonFromString(string) {
-    const jsonStart = string.indexOf("{");
-    if (jsonStart === -1)
-      return null;
-    const jsonAndAfter = string.substring(jsonStart).trim();
-    const pendingBalance = [];
-    let jsonText = "";
-    for (const char of jsonAndAfter) {
-      jsonText += char;
-      if (char === "{") {
-        pendingBalance.push("}");
-      } else if (char === "}") {
-        if (pendingBalance[pendingBalance.length - 1] === "}")
-          pendingBalance.pop();
-      } else if (char === "[") {
-        pendingBalance.push("]");
-      } else if (char === "]") {
-        if (pendingBalance[pendingBalance.length - 1] === "]")
-          pendingBalance.pop();
-      }
-      if (pendingBalance.length === 0)
-        break;
-    }
-    if (pendingBalance.length) {
-      console.debug("Found", pendingBalance.length, "characters to append to balance", jsonText, ". Adding ", pendingBalance.reverse().join(""));
-      jsonText += pendingBalance.reverse().join("");
-    }
-    return jsonText;
-  }
   function arrayFromResponseString(responseString) {
     if (typeof responseString !== "string")
       return null;
@@ -114,13 +48,6 @@
     } else {
       return null;
     }
-  }
-  function optionWithoutPrefix(option) {
-    if (!option)
-      return option;
-    const withoutStarAndNumber = option.trim().replace(/^[\-*\d.]+\s+/, "");
-    const withoutCheckbox = withoutStarAndNumber.replace(/^-?\s*\[\s*]\s+/, "");
-    return withoutCheckbox;
   }
   function cleanTextFromAnswer(answer) {
     return answer.split("\n").filter((line) => !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
@@ -169,6 +96,82 @@
       }
     }
     return null;
+  }
+  function noteUrlFromUUID(noteUUID) {
+    return `https://www.amplenote.com/notes/${noteUUID}`;
+  }
+  async function trimNoteContentFromAnswer(app, answer, { replaceToken = null, replaceIndex = null } = {}) {
+    const noteUUID = app.context.noteUUID;
+    const note = await app.notes.find(noteUUID);
+    const noteContent = await note.content();
+    let refinedAnswer = answer;
+    if (replaceIndex || replaceToken) {
+      replaceIndex = replaceIndex || noteContent.indexOf(replaceToken);
+      const upToReplaceToken = noteContent.substring(0, replaceIndex - 1);
+      const substring = upToReplaceToken.match(/(?:[\n\r.]|^)(.*)$/)?.[1];
+      const maxSentenceStartLength = 100;
+      const sentenceStart = !substring || substring.length > maxSentenceStartLength ? null : substring;
+      if (replaceToken) {
+        refinedAnswer = answer.replace(replaceToken, "").trim();
+        if (sentenceStart && sentenceStart.trim().length > 1) {
+          console.debug(`Replacing sentence start fragment: "${sentenceStart}"`);
+          refinedAnswer = refinedAnswer.replace(sentenceStart, "");
+        }
+        const afterTokenIndex = replaceIndex + replaceToken.length;
+        const afterSentence = noteContent.substring(afterTokenIndex + 1, afterTokenIndex + 100).trim();
+        if (afterSentence.length) {
+          const afterSentenceIndex = refinedAnswer.indexOf(afterSentence);
+          if (afterSentenceIndex !== -1) {
+            console.error("LLM response seems to have returned content after prompt. Truncating");
+            refinedAnswer = refinedAnswer.substring(0, afterSentenceIndex);
+          }
+        }
+      }
+    }
+    const originalLines = noteContent.split("\n").map((w) => w.trim());
+    const withoutOriginalLines = refinedAnswer.split("\n").filter((line) => !originalLines.includes(line.trim())).join("\n");
+    const withoutJunkLines = cleanTextFromAnswer(withoutOriginalLines);
+    console.debug(`Answer originally ${answer.length} length, refined answer length ${refinedAnswer.length} ("${refinedAnswer}"). Without repeated lines ${withoutJunkLines.length} length`);
+    return withoutJunkLines.trim();
+  }
+  function optionWithoutPrefix(option) {
+    if (!option)
+      return option;
+    const withoutStarAndNumber = option.trim().replace(/^[\-*\d.]+\s+/, "");
+    const withoutCheckbox = withoutStarAndNumber.replace(/^-?\s*\[\s*]\s+/, "");
+    return withoutCheckbox;
+  }
+  function truncate(text, limit) {
+    return text.length > limit ? text.slice(0, limit) : text;
+  }
+  function balancedJsonFromString(string) {
+    const jsonStart = string.indexOf("{");
+    if (jsonStart === -1)
+      return null;
+    const jsonAndAfter = string.substring(jsonStart).trim();
+    const pendingBalance = [];
+    let jsonText = "";
+    for (const char of jsonAndAfter) {
+      jsonText += char;
+      if (char === "{") {
+        pendingBalance.push("}");
+      } else if (char === "}") {
+        if (pendingBalance[pendingBalance.length - 1] === "}")
+          pendingBalance.pop();
+      } else if (char === "[") {
+        pendingBalance.push("]");
+      } else if (char === "]") {
+        if (pendingBalance[pendingBalance.length - 1] === "]")
+          pendingBalance.pop();
+      }
+      if (pendingBalance.length === 0)
+        break;
+    }
+    if (pendingBalance.length) {
+      console.debug("Found", pendingBalance.length, "characters to append to balance", jsonText, ". Adding ", pendingBalance.reverse().join(""));
+      jsonText += pendingBalance.reverse().join("");
+    }
+    return jsonText;
   }
   var init_app_util = __esm({
     "lib/app-util.js"() {
@@ -1504,6 +1507,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   }
   async function phase4_scoreAndRank(searchAgent, analyzedCandidates, criteria, userQuery) {
     searchAgent.emitProgress("Phase 4: Ranking results...");
+    const now = /* @__PURE__ */ new Date();
     const scoringPrompt = `
 You are scoring note search results. Original query: "${userQuery}"
 
@@ -1515,7 +1519,7 @@ Score each candidate note 0-10 on these dimensions:
 2. KEYWORD_DENSITY: How concentrated are the keywords in the content?
 3. CRITERIA_MATCH: Does it meet all the hard requirements (PDF/image/URL/exact phrase)?
 4. TAG_ALIGNMENT: Does it have relevant or preferred tags?
-5. RECENCY: Is it recent enough (if recency matters)?
+5. RECENCY: If the user specified recency requirement, does it meet that? If no user-specified requirement, score 10 for recency within a month of today (${now.toDateString()}), and scale down to 0 for candidates from 12+ months earlier.
 
 Candidates to score:
 ${analyzedCandidates.map((candidate, index) => `
@@ -1523,9 +1527,10 @@ ${index}. "${candidate.note.name}"
    UUID: ${candidate.note.uuid}
    Tags: ${candidate.note.tags?.join(", ") || "none"}
    Updated: ${candidate.note.updated}
-   ${candidate.contentPreview ? `Content preview: ${candidate.contentPreview}` : "No content fetched"}
    Checks: ${JSON.stringify(candidate.checks)}
-`).join("\n")}
+   Body Content (ending with $END$): ${candidate.content?.slice(0, LLM_SCORE_BODY_CONTENT_LENGTH)}
+$END$
+`).join("\n\n")}
 
 Return ONLY valid JSON array:
 [
@@ -1541,7 +1546,7 @@ Return ONLY valid JSON array:
 ]
 `;
     const scores = await searchAgent.llm(scoringPrompt, { jsonResponse: true });
-    console.log("Received scores from LLM:", scores, "Type:", typeof scores, "Is array:", Array.isArray(scores));
+    console.log("Received scores from LLM:", scores);
     const scoresArray = Array.isArray(scores) ? scores : [scores];
     const weights = {
       titleRelevance: 0.3,
@@ -1629,7 +1634,6 @@ Or if not confident:
     let content = null;
     const needAttachments = searchParams.booleanRequirements.containsPDF;
     const needImages = searchParams.booleanRequirements.containsImage;
-    const needContent = searchParams.exactPhrase || searchParams.booleanRequirements.containsURL;
     const fetches = [];
     if (needAttachments) {
       fetches.push(
@@ -1649,29 +1653,22 @@ Or if not confident:
         })
       );
     }
-    if (needContent) {
-      fetches.push(
-        searchAgent.app.notes.find(note.uuid).then((n) => n.content()).then((noteContent) => {
-          content = noteContent;
-          if (searchParams.exactPhrase) {
-            checks.hasExactPhrase = noteContent.includes(searchParams.exactPhrase);
-          }
-          if (searchParams.criteria.containsURL) {
-            checks.hasURL = /https?:\/\/[^\s]+/.test(noteContent);
-            const urls = noteContent.match(/https?:\/\/[^\s]+/g);
-            checks.urlCount = urls ? urls.length : 0;
-          }
-        })
-      );
-    }
+    fetches.push(
+      searchAgent.app.notes.find(note.uuid).then((n) => n.content()).then((noteContent) => {
+        content = noteContent;
+        if (searchParams.exactPhrase) {
+          checks.hasExactPhrase = noteContent.includes(searchParams.exactPhrase);
+        }
+        if (searchParams.criteria.containsURL) {
+          checks.hasURL = /https?:\/\/[^\s]+/.test(noteContent);
+          const urls = noteContent.match(/https?:\/\/[^\s]+/g);
+          checks.urlCount = urls ? urls.length : 0;
+        }
+      })
+    );
     await Promise.all(fetches);
     console.log(`Deep analysis finds note "${note.name}" from ${JSON.stringify(searchParams)} finds needAttachments: ${checks.hasPDF}, needImages: ${checks.hasImage}, needContent: ${content ? "fetched" : "not fetched"}`);
-    return {
-      note,
-      content: needContent ? content : null,
-      contentPreview: content ? content.substring(0, 500) : null,
-      checks
-    };
+    return { note, content, checks };
   }
   function rankPreliminary(noteCandidates, searchParams) {
     const noteScores = noteCandidates.map((note) => {
@@ -1697,8 +1694,10 @@ Or if not confident:
     const sortedByScore = noteScores.sort((a, b) => b.preliminaryScore - a.preliminaryScore);
     return sortedByScore.map((item) => item.note);
   }
+  var LLM_SCORE_BODY_CONTENT_LENGTH;
   var init_candidate_evaluation = __esm({
     "lib/functions/search/candidate-evaluation.js"() {
+      LLM_SCORE_BODY_CONTENT_LENGTH = 3e3;
     }
   });
 
@@ -1865,6 +1864,7 @@ Return ONLY valid JSON:
   var _SearchAgent, SearchAgent;
   var init_search_agent = __esm({
     "lib/functions/search-agent.js"() {
+      init_app_util();
       init_candidate_collection();
       init_candidate_evaluation();
       init_query_breakdown();
@@ -1966,7 +1966,7 @@ Return ONLY valid JSON:
               note: {
                 uuid: best.note.uuid,
                 name: best.note.name,
-                url: best.note.url(),
+                url: noteUrlFromUUID(best.note.uuid),
                 tags: best.note.tags || [],
                 updated: best.note.updated,
                 created: best.note.created
@@ -1989,7 +1989,7 @@ Return ONLY valid JSON:
                 note: {
                   uuid: r.note.uuid,
                   name: r.note.name,
-                  url: r.note.url(),
+                  url: noteUrlFromUUID(r.note.uuid),
                   tags: r.note.tags || [],
                   updated: r.note.updated
                 },
@@ -2002,13 +2002,14 @@ Return ONLY valid JSON:
         // --------------------------------------------------------------------------
         // Create a summary note with search results
         async createSearchSummaryNote(userQuery, searchResult, rankedNotes) {
+          this.emitProgress(`Creating search summary note for ${rankedNotes.length} result${rankedNotes.length === 1 ? "" : "s"}...`);
           try {
             const modelUsed = preferredModel(this.app, this.plugin.lastModelUsed) || "unknown model";
             const titlePrompt = `Create a brief, descriptive title (max 40 chars) for a search results note.
 Search query: "${userQuery}"
 Found: ${searchResult.found ? "Yes" : "No"}
 Return ONLY the title text, nothing else.`;
-            const titleBase = await this.llm(titlePrompt, { jsonResponse: false });
+            const titleBase = await this.llm(titlePrompt);
             const now = /* @__PURE__ */ new Date();
             const noteTitle = `${modelUsed} result: ${titleBase.trim()} (queried ${now.toLocaleDateString()})`;
             let noteContent = `# Search Results
@@ -2046,6 +2047,7 @@ No notes matched the search criteria.
             }
             const summaryNoteHandle = await this.app.createNote(noteTitle.trim(), ["plugins/ample-ai"]);
             await this.app.replaceNoteContent(summaryNoteHandle, noteContent);
+            this.emitProgress(`Created search summary note: <a href="${noteUrlFromUUID(summaryNoteHandle.uuid)}">${noteTitle}</a>`);
             return {
               uuid: summaryNoteHandle.uuid,
               name: noteTitle.trim(),
@@ -3056,8 +3058,12 @@ Will be utilized after your preliminary approval`,
 
   // lib/functions/search-prompts.js
   async function userSearchCriteria(app) {
-    const userQuery = await app.prompt("Enter your search criteria");
-    return { userQuery };
+    return await app.prompt("Enter your search criteria", { inputs: [
+      { type: "text", label: "Describe any identifying details of the note(s) you wish to locate" },
+      { type: "date", label: "Only notes created or changed since (optional)" },
+      { type: "tags", label: "Only return notes with this tag (optional)" },
+      { type: "string", label: "Max notes to return (optional)" }
+    ] });
   }
 
   // lib/functions/suggest-tasks.js
@@ -3195,6 +3201,7 @@ ${taskArray.join("\n")}`);
     lastModelUsed: null,
     noFallbackModels: false,
     ollamaModelsFound: null,
+    progressText: "",
     // --------------------------------------------------------------------------
     appOption: {
       // --------------------------------------------------------------------------
@@ -3231,11 +3238,19 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
       // --------------------------------------------------------------------------
       [SEARCH_USING_AGENT_LABEL]: async function(app) {
         const searchAgent = new SearchAgent(app, this);
-        const { userQuery, options } = await userSearchCriteria(app);
+        const [userQuery, changedSince, onlyTags, maxNotesCount] = await userSearchCriteria(app);
+        if (!userQuery?.length)
+          return;
         searchAgent.onProgress((progressText) => {
-          app.alert(progressText);
+          this.progressText += `${progressText}<br /><br />`;
         });
-        await searchAgent.search(userQuery);
+        searchAgent.emitProgress(`Starting search for ${userQuery.length}-length user query`);
+        await app.openEmbed();
+        await searchAgent.search(userQuery, {
+          dateFilter: { after: changedSince },
+          resultCount: maxNotesCount || 1,
+          tagRequirement: { mustHave: onlyTags }
+        });
       },
       // --------------------------------------------------------------------------
       "Show AI Usage by Model": async function(app) {
@@ -3407,6 +3422,10 @@ ${callCountByModelText}
           return await this._wordReplacer(app, text, "thesaurus");
         }
       }
+    },
+    // --------------------------------------------------------------------------
+    async renderEmbed(app) {
+      return this.progressText;
     },
     // --------------------------------------------------------------------------
     // Private methods
