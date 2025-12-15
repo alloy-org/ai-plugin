@@ -136,10 +136,10 @@ describe("Search Agent", () => {
   // --------------------------------------------------------------------------------------
   it("should filter candidates by tag requirement", async () => {
     const notes = [
-      mockNote("# Food Recipes\n\nMy collection of cooking recipes and meal ideas.", "Food Note",
+      mockNote("# Food Recipes\n\nMy collection of cooking recipes and meal ideas.", "Recipes from Mother",
         "note-tag-001", { tags: ["food", "recipes"] }
       ),
-      mockNote("# Plain Note\n\nTalks about food and cooking but has no tags.", "Plain Note",
+      mockNote("# Plain Note\n\nTalks about food and cooking but has no tags.", "Plain Jane the main dame",
         "note-tag-002", { tags: [] }
       )
     ];
