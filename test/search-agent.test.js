@@ -10,6 +10,7 @@ import {
 } from "./test-helpers"
 
 const AWAIT_TIME = 60000;
+const DEBUG_MULTIPLIER = 5; // When debugging tests, this will increase timeouts
 
 // --------------------------------------------------------------------------------------
 describe("Search Agent", () => {
@@ -126,12 +127,12 @@ describe("Search Agent", () => {
 
     // Verify we found the correct note
     expect(result.found).toBe(true);
-    expect(result.note).toBeDefined();
-    expect(result.note.uuid).toBe("note-003");
-    expect(result.note.name).toBe("Street Food Discovery");
+    expect(result.notes).toBeDefined();
+    expect(result.notes[0].uuid).toBe("note-003");
+    expect(result.notes[0].name).toBe("Street Food Discovery");
     expect(result.confidence).toBeGreaterThan(7); // Should have high confidence
 
-  }, AWAIT_TIME);
+  }, AWAIT_TIME*DEBUG_MULTIPLIER);
 
   // --------------------------------------------------------------------------------------
   it("should filter candidates by tag requirement", async () => {
@@ -156,5 +157,5 @@ describe("Search Agent", () => {
     expect(result.found).toBe(true);
     const resultNote = result.note || result.notes[0];
     expect(resultNote.uuid).toBe("note-tag-001");
-  }, AWAIT_TIME);
+  }, AWAIT_TIME*DEBUG_MULTIPLIER);
 });
