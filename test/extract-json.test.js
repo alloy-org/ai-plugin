@@ -1,4 +1,5 @@
 import { extractJsonFromString } from "providers/fetch-json"
+import { jsonFromAiText } from "app-util"
 
 // --------------------------------------------------------------------------------------
 describe("Observed AI responses", () => {
@@ -31,4 +32,57 @@ describe("Observed AI responses", () => {
     expect(Object.keys(result)).toContain("result");
     expect(result["result"].length).toEqual(10);
   })
+});
+
+// --------------------------------------------------------------------------------------
+describe("jsonFromAiText array and object handling", () => {
+
+  it("should handle a single object wrapped in markdown code fences", () => {
+    const response = "```json\n{ \"jsonStuff\": true }\n```";
+    const result = jsonFromAiText(response);
+    expect(result).toBeTruthy();
+    expect(result.jsonStuff).toBe(true);
+  });
+
+  it("should handle an array wrapped in markdown code fences", () => {
+    const response = "```json\n[\n{\"jsonStuff\": true}\n]\n```";
+    const result = jsonFromAiText(response);
+    expect(result).toBeTruthy();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(1);
+    expect(result[0].jsonStuff).toBe(true);
+  });
+
+  it("should handle a plain object", () => {
+    const response = '"key": "value", "number": 42 }';
+    const result = jsonFromAiText(response);
+    expect(result).toBeTruthy();
+    expect(result.key).toBe("value");
+    expect(result.number).toBe(42);
+  });
+
+  it("should handle a plain array", () => {
+    const response = '[{ "id": 1 }, { "id": 2 }]';
+    const result = jsonFromAiText(response);
+    expect(result).toBeTruthy();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result.length).toBe(2);
+    expect(result[0].id).toBe(1);
+    expect(result[1].id).toBe(2);
+  });
+
+  it("should handle array with text before", () => {
+    const response = 'Here is the result:\n[{ "item": "first" }]';
+    const result = jsonFromAiText(response);
+    expect(result).toBeTruthy();
+    expect(Array.isArray(result)).toBe(true);
+    expect(result[0].item).toBe("first");
+  });
+
+  it("should prefer array when both array and object brackets exist", () => {
+    const response = '[{ "nested": true }';
+    const result = jsonFromAiText(response);
+    expect(result).toBeTruthy();
+    expect(Array.isArray(result)).toBe(true);
+  });
 });
