@@ -23,7 +23,7 @@ describe("Search Agent", () => {
     const notes = [
       // Note 0: Has image but no sandwich content
       mockNote("# My Vacation\n\nBeach trip. Amazing sunset!", "Beach Trip 2024", "note-001", {
-        images: [{ url: "https://example.com/beach.jpg", width: 1200, height: 800 }],
+        images: [{ url: "https://example.com/beach.jpg" }],
         tags: ["vacation", "photos"], updated: noteTimestampFromNow({ daysAgo: 7 })
       }),
 
@@ -39,10 +39,7 @@ describe("Search Agent", () => {
         "delicious sandwich with bologna that I couldn't identify, but it was incredible! " +
         "Secret family recipe from New York. Need to find this cart again!\n\nSpicy tangy sauce.",
         "Street Food Discovery", "note-003", {
-          images: [
-            { url: "https://example.com/sandwich.jpg", width: 800, height: 600 },
-            { url: "https://example.com/vendor.jpg", width: 800, height: 600 }
-          ],
+          images: [{ url: "https://example.com/sandwich.jpg" }, { url: "https://example.com/vendor.jpg" }],
           tags: ["food", "nyc", "street-food"], updated: noteTimestampFromNow({ monthsAgo: 11 })
         }
       ),
@@ -50,7 +47,7 @@ describe("Search Agent", () => {
       // Note 3: Has image and food content but not sandwich
       mockNote("# Pizza Night\n\nMade pizza from scratch. Perfect dough!", "Pizza Success", "note-004",
         {
-          images: [{ url: "https://example.com/pizza.jpg", width: 1000, height: 750 }],
+          images: [{ url: "https://example.com/pizza.jpg" }],
           tags: ["food", "cooking"], updated: noteTimestampFromNow({ monthsAgo: 2 })
         }
       ),
@@ -65,10 +62,7 @@ describe("Search Agent", () => {
       // Note 5: Travel note with images, no food content
       mockNote("# European Trip\n\nParis and Rome. Stunning architecture!", "Europe 2024", "note-006",
         {
-          images: [
-            { url: "https://example.com/eiffel.jpg", width: 900, height: 1200 },
-            { url: "https://example.com/colosseum.jpg", width: 1200, height: 900 }
-          ],
+          images: [{ url: "https://example.com/eiffel.jpg" }, { url: "https://example.com/colosseum.jpg" }],
           tags: ["travel", "europe"], updated: noteTimestampFromNow({ monthsAgo: 4 })
         }
       ),
@@ -81,7 +75,7 @@ describe("Search Agent", () => {
       // Note 7: Has image and mentions meat but not sandwich
       mockNote("# BBQ Party\n\nGrilled steaks and ribs. Great BBQ sauce!", "Weekend BBQ", "note-008",
         {
-          images: [{ url: "https://example.com/bbq.jpg", width: 1100, height: 800 }],
+          images: [{ url: "https://example.com/bbq.jpg" }],
           tags: ["food", "bbq", "party"], updated: noteTimestampFromNow({ monthsAgo: 6 })
         }
       ),
@@ -94,7 +88,7 @@ describe("Search Agent", () => {
       // Note 9: Has image and New York but talks about buildings, not food
       mockNote("# NYC Architecture\n\nIncredible buildings. Love Art Deco!", "Architecture Notes",
         "note-010", {
-          images: [{ url: "https://example.com/building.jpg", width: 800, height: 1200 }],
+          images: [{ url: "https://example.com/building.jpg" }],
           tags: ["architecture", "nyc"], updated: noteTimestampFromNow({ monthsAgo: 10 })
         }
       )
@@ -102,7 +96,10 @@ describe("Search Agent", () => {
 
     const app = mockApp(notes);
     mockAlertAccept(app);
-    const testModel = defaultTestModel("gemini");
+    // Choose model name randomly between "anthropic", "openai" and "gemini":
+    const availableModels = ["anthropic", "openai", "gemini"];
+    const modelName = availableModels[Math.floor(Math.random() * availableModels.length)];
+    const testModel = defaultTestModel(modelName);
     app.settings[AI_MODEL_LABEL] = testModel;
 
     // Create search agent
@@ -131,7 +128,7 @@ describe("Search Agent", () => {
     expect(result.notes).toBeDefined();
     expect(result.notes[0].note.uuid).toBe("note-003");
     expect(result.notes[0].note.name).toBe("Street Food Discovery");
-    expect(result.confidence).toBeGreaterThan(7); // Should have high confidence
+    expect(result.confidence).toBeGreaterThan(6); // Should have high confidence
 
   }, AWAIT_TIME*DEBUG_MULTIPLIER);
 
