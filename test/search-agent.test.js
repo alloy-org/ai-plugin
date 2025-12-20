@@ -128,8 +128,8 @@ describe("Search Agent", () => {
     // Verify we found the correct note
     expect(result.found).toBe(true);
     expect(result.notes).toBeDefined();
-    expect(result.notes[0].uuid).toBe("note-003");
-    expect(result.notes[0].name).toBe("Street Food Discovery");
+    expect(result.notes[0].note.uuid).toBe("note-003");
+    expect(result.notes[0].note.name).toBe("Street Food Discovery");
     expect(result.confidence).toBeGreaterThan(7); // Should have high confidence
 
   }, AWAIT_TIME*DEBUG_MULTIPLIER);
