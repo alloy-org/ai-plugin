@@ -1,6 +1,7 @@
 import { AI_MODEL_LABEL, PROVIDER_SETTING_KEY_LABELS } from "constants/settings.js"
-import { PROVIDER_DEFAULT_MODEL, MIN_API_KEY_CHARACTERS } from "constants/provider.js"
+import { MIN_API_KEY_CHARACTERS } from "constants/provider.js"
 import { userSearchCriteria } from "functions/search-prompts.js"
+import { configuredProvidersSorted, modelForProvider } from "providers/ai-provider-settings"
 import { mockApp } from "../test-helpers.js"
 
 // --------------------------------------------------------------------------------------
@@ -10,14 +11,12 @@ describe("userSearchCriteria", () => {
     const app = mockApp(null);
     app.settings[AI_MODEL_LABEL] = "claude-sonnet-4-5";
 
-    const openAiKeyLabel = PROVIDER_SETTING_KEY_LABELS.openai;
-    const openAiKey = "x".repeat(MIN_API_KEY_CHARACTERS.openai + 1);
-    app.settings[openAiKeyLabel] = openAiKey;
+    const configuredProviders = configuredProvidersSorted(app.settings || {});
+    let chosenProvider = configuredProviders[configuredProviders.length - 1];
 
     app.prompt.mockImplementation(async (_text, options) => {
-      expect(options.actions.length).toBe(1);
-      expect(options.actions[0].value).toBe("openai");
-      return [ "find my note", null, null, "3", "openai" ];
+      expect(options.actions.length).toBe(configuredProviders.length);
+      return [ "find my note", null, null, "3", chosenProvider ];
     });
 
     const [ userQuery, changedSince, onlyTags, maxNotesCount, preferredAiModel ] = await userSearchCriteria(app);
@@ -25,7 +24,7 @@ describe("userSearchCriteria", () => {
     expect(changedSince).toBeNull();
     expect(onlyTags).toBeNull();
     expect(maxNotesCount).toBe(3);
-    expect(preferredAiModel).toBe(PROVIDER_DEFAULT_MODEL.openai);
+    expect(preferredAiModel).toBe(modelForProvider(app.settings?.[AI_MODEL_LABEL], chosenProvider));
   });
 
   // --------------------------------------------------------------------------------------
