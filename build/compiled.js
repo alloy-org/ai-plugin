@@ -129,11 +129,12 @@ END
     return withoutCheckbox;
   }
   function pluralize(number, noun) {
-    if (!Number.isInteger(number) && !Number.isFinite(number)) {
+    const numValue = typeof number === "string" ? parseFloat(number) : number;
+    if (!Number.isInteger(numValue) && !Number.isFinite(numValue)) {
       throw new Error("pluralize() requires an integer to be given");
     }
-    const numberPart = number.toLocaleString();
-    return `${numberPart} ${noun}${parseInt(number) === 1 ? "" : "s"}`;
+    const numberPart = numValue.toLocaleString();
+    return `${numberPart} ${noun}${parseInt(numValue) === 1 ? "" : "s"}`;
   }
   async function trimNoteContentFromAnswer(app, answer, { replaceToken = null, replaceIndex = null } = {}) {
     const noteUUID = app.context.noteUUID;
@@ -531,7 +532,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     if (!app || !app.settings)
       return [];
     const preferredModelsFromSetting = parsePreferredModels(app.settings[AI_MODEL_LABEL]);
-    if (preferredModelsFromSetting)
+    if (preferredModelsFromSetting?.length)
       return preferredModelsFromSetting;
     const providers = configuredProvidersSorted(app.settings);
     return providers.map((providerEm) => PROVIDER_DEFAULT_MODEL[providerEm]);
@@ -2183,17 +2184,18 @@ Will be utilized after your preliminary approval`,
   var ATTEMPT_FIRST_PASS = "first_pass";
   var ATTEMPT_KEYWORD_PAIRS = "keyword_pairs";
   var ATTEMPT_INDIVIDUAL = "individual";
-  var MIN_TARGET_RESULTS = 10;
+  var MAX_PARALLEL_SEARCHES = 10;
   var MAX_RESULTS_RETURNED = 30;
   var MAX_SECONDARY_KEYWORDS_TO_QUERY = 15;
   var MIN_FILTER_NOTES_RESULTS = 10;
-  var MAX_PARALLEL_SEARCHES = 10;
+  var MIN_KEEP_RESULT_SCORE = 5;
+  var MIN_TARGET_RESULTS = 10;
 
   // lib/functions/search/candidate-collection.js
   async function phase2_collectCandidates(searchAgent, criteria) {
     searchAgent.emitProgress("Phase 2: Filtering candidates...");
-    const { primaryKeywords, secondaryKeywords, exactPhrase, dateFilter, tagRequirement } = criteria;
-    let candidates = await searchNotesByStrategy(searchAgent, primaryKeywords, secondaryKeywords, tagRequirement);
+    const { dateFilter, primaryKeywords, resultCount, secondaryKeywords, tagRequirement } = criteria;
+    let candidates = await searchNotesByStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement);
     if (dateFilter) {
       const dateField = dateFilter.type === "created" ? "created" : "updated";
       const afterDate = new Date(dateFilter.after);
@@ -2220,11 +2222,6 @@ Will be utilized after your preliminary approval`,
     searchAgent.emitProgress(`Found ${candidates.length} candidate notes`);
     return candidates;
   }
-  function mergeCandidates(list1, list2) {
-    const uuidSet = new Set(list1.map((n) => n.uuid));
-    const unique = list2.filter((n) => !uuidSet.has(n.uuid));
-    return [...list1, ...unique];
-  }
   function analyzeTagFrequency(candidates) {
     const frequency = {};
     candidates.forEach((note) => {
@@ -2234,82 +2231,48 @@ Will be utilized after your preliminary approval`,
     });
     return frequency;
   }
-  async function searchNotesByStrategy(searchAgent, primaryKeywords, secondaryKeywords, tagRequirement) {
+  async function searchNotesByStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement) {
     if (primaryKeywords.length === 0)
       return [];
-    let results = await executeSearchStrategy(searchAgent, primaryKeywords, tagRequirement);
-    if (results.length < MIN_TARGET_RESULTS && secondaryKeywords?.length) {
-      console.log(`[${searchAgent.searchAttempt}] Below minimum target (${MIN_TARGET_RESULTS}), broadening with secondary keywords`);
-      const secondaryKeywordsToUse = secondaryKeywords.slice(0, MAX_SECONDARY_KEYWORDS_TO_QUERY);
-      const secondaryResults = await executeSearchStrategy(searchAgent, secondaryKeywordsToUse, tagRequirement);
-      console.log(`[${searchAgent.searchAttempt}] Secondary keyword search: ${secondaryResults.length} results`);
-      results = mergeCandidates(results, secondaryResults);
-      console.log(`[${searchAgent.searchAttempt}] Total after merging: ${results.length} results`);
-    }
-    return results;
+    const secondaryKeywordsToUse = (secondaryKeywords || []).slice(0, MAX_SECONDARY_KEYWORDS_TO_QUERY);
+    return await executeSearchStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywordsToUse, tagRequirement);
   }
-  async function executeSearchStrategy(searchAgent, keywords, tagRequirement) {
-    if (keywords.length === 0)
+  async function executeSearchStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement) {
+    if (!primaryKeywords?.length)
       return [];
     const strategyName = searchAgent.searchAttempt;
-    let keywordsPerQuery;
-    let limitPerQuery = null;
-    if (searchAgent.searchAttempt === ATTEMPT_FIRST_PASS) {
-      keywordsPerQuery = 3;
-    } else if (searchAgent.searchAttempt === ATTEMPT_KEYWORD_PAIRS) {
-      keywordsPerQuery = 2;
-    } else if (searchAgent.searchAttempt === ATTEMPT_INDIVIDUAL) {
-      keywordsPerQuery = 1;
-      limitPerQuery = 10;
-    } else {
-      return [];
+    const effectiveResultCount = resultCount || 1;
+    const minTargetResults = Math.max(MIN_TARGET_RESULTS, effectiveResultCount);
+    const minFilterNotesResults = Math.max(MIN_FILTER_NOTES_RESULTS, effectiveResultCount);
+    const maxResultsReturned = Math.max(MAX_RESULTS_RETURNED, effectiveResultCount);
+    const { keywordsPerQuery, maxResultsPerQuery } = strategyParamsForAttempt(searchAgent.searchAttempt);
+    const primaryQueries = generateQueryCombinations(primaryKeywords, keywordsPerQuery);
+    const secondaryQueries = secondaryKeywords?.length ? generateQueryCombinations(secondaryKeywords, keywordsPerQuery) : [];
+    const candidatesByUuid = /* @__PURE__ */ new Map();
+    await addMatchesFromFilterNotes(searchAgent, candidatesByUuid, primaryQueries, tagRequirement, maxResultsPerQuery);
+    if (candidatesByUuid.size < minTargetResults && secondaryQueries.length) {
+      console.log(`[${strategyName}] Below minimum target (${minTargetResults}), broadening filterNotes with secondary keywords`);
+      await addMatchesFromFilterNotes(searchAgent, candidatesByUuid, secondaryQueries, tagRequirement, maxResultsPerQuery);
     }
-    const queries = generateQueryCombinations(keywords, keywordsPerQuery);
-    const filterResults = [];
-    for (let i = 0; i < queries.length; i += MAX_PARALLEL_SEARCHES) {
-      const batch = queries.slice(i, i + MAX_PARALLEL_SEARCHES);
-      const batchResults = await Promise.all(
-        batch.map(async (query) => {
-          const results = await searchAgent.app.filterNotes({
-            query: query.join(" "),
-            tag: tagRequirement.mustHave || void 0
-          });
-          return limitPerQuery ? results.slice(0, limitPerQuery) : results;
-        })
-      );
-      filterResults.push(...batchResults.flat());
-    }
-    const seen = /* @__PURE__ */ new Set();
-    const uniqueFilterResults = filterResults.filter((note) => {
-      if (seen.has(note.uuid))
-        return false;
-      seen.add(note.uuid);
-      return true;
-    });
-    let finalResults = uniqueFilterResults;
-    if (uniqueFilterResults.length < MIN_FILTER_NOTES_RESULTS) {
-      console.log(`[${strategyName}] Filter results (${uniqueFilterResults.length}) below minimum, supplementing with app.searchNotes`);
-      const searchResults = [];
-      for (let i = 0; i < keywords.length; i += MAX_PARALLEL_SEARCHES) {
-        const batch = keywords.slice(i, i + MAX_PARALLEL_SEARCHES);
-        const batchResults = await Promise.all(
-          batch.map((keyword) => searchAgent.app.searchNotes(keyword))
-        );
-        searchResults.push(...batchResults.flat());
+    if (candidatesByUuid.size < minFilterNotesResults) {
+      console.log(`[${strategyName}] filterNotes candidates (${candidatesByUuid.size}) below minimum (${minFilterNotesResults}), supplementing with app.searchNotes`);
+      await addMatchesFromSearchNotes(searchAgent, candidatesByUuid, primaryQueries, maxResultsPerQuery);
+      if (candidatesByUuid.size < minFilterNotesResults && secondaryQueries.length) {
+        console.log(`[${strategyName}] additionally searching ${secondaryQueries.length} with app.searchNotes since we only located ${candidatesByUuid.size} candidates so far`);
+        await addMatchesFromSearchNotes(searchAgent, candidatesByUuid, secondaryQueries, maxResultsPerQuery);
       }
-      console.log(`[${strategyName}] app.searchNotes returned ${searchResults.length} total results`);
-      const supplementalResults = searchResults.filter((note) => {
-        if (seen.has(note.uuid))
-          return false;
-        seen.add(note.uuid);
-        return true;
-      });
-      finalResults = [...uniqueFilterResults, ...supplementalResults];
-      console.log(`[${strategyName}] Combined total: ${finalResults.length} results`);
     } else {
-      console.log(`[${strategyName}] Searched ${queries.length} queries: ${uniqueFilterResults.length} unique results`);
+      console.log(`[${strategyName}] Searched ${primaryQueries.length} primary filterNotes queries: ${candidatesByUuid.size} unique candidates`);
     }
-    return finalResults.slice(0, MAX_RESULTS_RETURNED);
+    const finalResults = Array.from(candidatesByUuid.values()).sort((a, b) => {
+      const mc = (b.matchCount || 0) - (a.matchCount || 0);
+      if (mc !== 0)
+        return mc;
+      const bu = b.updated ? new Date(b.updated).getTime() : 0;
+      const au = a.updated ? new Date(a.updated).getTime() : 0;
+      return bu - au;
+    });
+    return finalResults.slice(0, maxResultsReturned);
   }
   function generateQueryCombinations(keywords, keywordsPerCombination) {
     if (keywordsPerCombination >= keywords.length) {
@@ -2340,10 +2303,92 @@ Will be utilized after your preliminary approval`,
     }
     return [keywords];
   }
+  function strategyParamsForAttempt(searchAttempt) {
+    if (searchAttempt === ATTEMPT_FIRST_PASS)
+      return { keywordsPerQuery: 3, maxResultsPerQuery: null };
+    if (searchAttempt === ATTEMPT_KEYWORD_PAIRS)
+      return { keywordsPerQuery: 2, maxResultsPerQuery: null };
+    if (searchAttempt === ATTEMPT_INDIVIDUAL)
+      return { keywordsPerQuery: 1, maxResultsPerQuery: 10 };
+    throw new Error(`Unknown searchAttempt "${searchAttempt}" (expected one of: ${ATTEMPT_FIRST_PASS}, ${ATTEMPT_KEYWORD_PAIRS}, ${ATTEMPT_INDIVIDUAL})`);
+  }
+  function queryStringFromCombination(query) {
+    return (query || []).join(" ").trim();
+  }
+  function uniqueUuidNoteCandidatesFromNotes(notes) {
+    const seen = /* @__PURE__ */ new Set();
+    const unique = [];
+    for (const note of notes || []) {
+      if (!note?.uuid)
+        continue;
+      if (seen.has(note.uuid))
+        continue;
+      seen.add(note.uuid);
+      unique.push(note);
+    }
+    return unique;
+  }
+  function upsertCandidateWithIncrement(candidatesByUuid, note, increment = 1) {
+    if (!note?.uuid)
+      return;
+    const existing = candidatesByUuid.get(note.uuid);
+    if (existing) {
+      existing.matchCount = (existing.matchCount || 0) + increment;
+      return;
+    }
+    candidatesByUuid.set(note.uuid, { ...note, matchCount: increment });
+  }
+  async function addMatchesFromFilterNotes(searchAgent, candidatesByUuid, queries, tagRequirement, maxResultsPerQuery) {
+    for (let i = 0; i < queries.length; i += MAX_PARALLEL_SEARCHES) {
+      const batch = queries.slice(i, i + MAX_PARALLEL_SEARCHES);
+      const batchResults = await Promise.all(
+        batch.map(async (queryCombo) => {
+          const query = queryStringFromCombination(queryCombo);
+          const results = await searchAgent.app.filterNotes({
+            query,
+            tag: tagRequirement?.mustHave || void 0
+          });
+          const limited = maxResultsPerQuery ? results.slice(0, maxResultsPerQuery) : results;
+          return uniqueUuidNoteCandidatesFromNotes(limited);
+        })
+      );
+      for (const perQueryNotes of batchResults) {
+        for (const note of perQueryNotes) {
+          upsertCandidateWithIncrement(candidatesByUuid, note, 1);
+        }
+      }
+    }
+  }
+  async function addMatchesFromSearchNotes(searchAgent, candidatesByUuid, queries, maxResultsPerQuery) {
+    for (let i = 0; i < queries.length; i += MAX_PARALLEL_SEARCHES) {
+      const batch = queries.slice(i, i + MAX_PARALLEL_SEARCHES);
+      const batchResults = await Promise.all(
+        batch.map(async (queryCombo) => {
+          const query = queryStringFromCombination(queryCombo);
+          const results = await searchAgent.app.searchNotes(query);
+          const limited = maxResultsPerQuery ? results.slice(0, maxResultsPerQuery) : results;
+          return uniqueUuidNoteCandidatesFromNotes(limited);
+        })
+      );
+      for (const perQueryNotes of batchResults) {
+        for (const note of perQueryNotes) {
+          upsertCandidateWithIncrement(candidatesByUuid, note, 1);
+        }
+      }
+    }
+  }
 
   // lib/functions/search/candidate-evaluation.js
   var LLM_SCORE_BODY_CONTENT_LENGTH = 3e3;
   var MIN_ACCEPT_SCORE = 8;
+  var RANK_MATCH_COUNT_CAP = 10;
+  var RANK_MATCH_COUNT_WEIGHT = 1.5;
+  var RANK_PRIMARY_KEYWORD_WEIGHT = 10;
+  var RANK_RECENCY_BASE_SCORE = 5;
+  var RANK_RECENCY_DECAY_DAYS = 30;
+  var RANK_SECONDARY_KEYWORD_WEIGHT = 3;
+  var RANK_SECONDARY_KEYWORDS_TO_CHECK = 3;
+  var RANK_TAG_BOOST_WEIGHT = 5;
   async function phase3_deepAnalysis(searchAgent, candidates, criteria) {
     searchAgent.emitProgress("Phase 3: Analyzing top candidates...");
     const preliminaryRanked = rankPreliminary(candidates, criteria);
@@ -2386,11 +2431,13 @@ Score each candidate note 0-10 on these dimensions:
 3. CRITERIA_MATCH: Does it meet all the hard requirements (PDF/image/URL/exact phrase)?
 4. TAG_ALIGNMENT: Does it have relevant or preferred tags?
 5. RECENCY: If the user specified recency requirement, does it meet that? If no user-specified requirement, score 10 for recency within a month of today (${now.toDateString()}), and scale down to 0 for candidates from 12+ months earlier.
+6. MATCH_COUNT_SIGNAL: Consider the candidate's MatchCount (how many separate query permutations matched this note across filterNotes/searchNotes). Higher MatchCount is a weak positive signal that the note is relevant, but should not override clear intent mismatch. Score 0-10 where 10 means "highly consistent match across many permutations".
 
 Candidates to score:
 ${analyzedCandidates.map((candidate, index) => `
 ${index}. "${candidate.note.name}"
    UUID: ${candidate.note.uuid}
+   MatchCount: ${candidate.note.matchCount || 0}
    Tags: ${candidate.note.tags?.join(", ") || "none"}
    Updated: ${candidate.note.updated}
    Checks: ${JSON.stringify(candidate.checks)}
@@ -2407,6 +2454,7 @@ Return ONLY valid JSON array:
     "criteriaMatch": 10,
     "tagAlignment": 6,
     "recency": 5,
+    "matchCountSignal": 4,
     "reasoning": "Brief explanation of why this note matches"
   }
 ]
@@ -2415,14 +2463,19 @@ Return ONLY valid JSON array:
     console.log("Received scores from LLM:", scores);
     const scoresArray = Array.isArray(scores) ? scores : [scores];
     const weights = {
-      titleRelevance: 0.3,
-      keywordDensity: 0.25,
+      titleRelevance: 0.28,
+      keywordDensity: 0.23,
       criteriaMatch: 0.2,
-      tagAlignment: 0.15,
-      recency: 0.1
+      tagAlignment: 0.14,
+      recency: 0.1,
+      matchCountSignal: 0.05
     };
     const rankedNotes = scoresArray.map((score) => {
-      const finalScore = score.titleRelevance * weights.titleRelevance + score.keywordDensity * weights.keywordDensity + score.criteriaMatch * weights.criteriaMatch + score.tagAlignment * weights.tagAlignment + score.recency * weights.recency;
+      const finalScore = Object.entries(weights).reduce((sum, [key, weight]) => {
+        const rawValue = score[key];
+        const value = Number(rawValue === void 0 || rawValue === null ? 0 : rawValue);
+        return sum + value * weight;
+      }, 0);
       return {
         note: analyzedCandidates[score.noteIndex].note,
         finalScore: Math.round(finalScore * 10) / 10,
@@ -2438,6 +2491,11 @@ Return ONLY valid JSON array:
     if (rankedNotes.length === 0) {
       return searchAgent.handleNoResults(criteria);
     }
+    const pruneResult = rankedNotesAfterRemovingPoorMatches(rankedNotes);
+    if (pruneResult.removedCount) {
+      console.log(`Pruned ${pruneResult.removedCount} low-quality results (score < ${MIN_KEEP_RESULT_SCORE} or "poor match")`);
+    }
+    rankedNotes = pruneResult.rankedNotes;
     const topResult = rankedNotes[0];
     if (topResult.finalScore >= MIN_ACCEPT_SCORE) {
       searchAgent.emitProgress(`Found ${topResult.finalScore}/10 match, returning result.`);
@@ -2527,28 +2585,42 @@ Or if not confident:
     return { note, content, checks };
   }
   function rankPreliminary(noteCandidates, searchParams) {
+    const msPerDay = 1e3 * 60 * 60 * 24;
     const noteScores = noteCandidates.map((note) => {
       let score = 0;
       const titleLower = (note.name || "").toLowerCase();
       searchParams.primaryKeywords.forEach((kw) => {
         if (titleLower.includes(kw.toLowerCase())) {
-          score += 10;
+          score += RANK_PRIMARY_KEYWORD_WEIGHT;
         }
       });
-      searchParams.secondaryKeywords.slice(0, 3).forEach((kw) => {
+      searchParams.secondaryKeywords.slice(0, RANK_SECONDARY_KEYWORDS_TO_CHECK).forEach((kw) => {
         if (titleLower.includes(kw.toLowerCase())) {
-          score += 3;
+          score += RANK_SECONDARY_KEYWORD_WEIGHT;
         }
       });
-      score += (note._tagBoost || 1) * 5;
+      score += Math.min(RANK_MATCH_COUNT_CAP, note.matchCount || 0) * RANK_MATCH_COUNT_WEIGHT;
+      score += (note._tagBoost || 1) * RANK_TAG_BOOST_WEIGHT;
       if (searchParams.dateFilter) {
-        const daysSinceUpdate = (Date.now() - new Date(note.updated)) / (1e3 * 60 * 60 * 24);
-        score += Math.max(0, 5 - daysSinceUpdate / 30);
+        const daysSinceUpdate = (Date.now() - new Date(note.updated)) / msPerDay;
+        score += Math.max(0, RANK_RECENCY_BASE_SCORE - daysSinceUpdate / RANK_RECENCY_DECAY_DAYS);
       }
       return { note, preliminaryScore: score };
     });
     const sortedByScore = noteScores.sort((a, b) => b.preliminaryScore - a.preliminaryScore);
     return sortedByScore.map((item) => item.note);
+  }
+  function rankedNotesAfterRemovingPoorMatches(rankedNotes) {
+    const poorMatchRegex = /poor match/i;
+    const filteredRankedNotes = rankedNotes.filter((r) => {
+      const reasoning = r.scoreBreakdown && r.scoreBreakdown.reasoning ? r.scoreBreakdown.reasoning : "";
+      const hasPoorMatchLanguage = poorMatchRegex.test(reasoning);
+      return r.finalScore >= MIN_KEEP_RESULT_SCORE && !hasPoorMatchLanguage;
+    });
+    if (filteredRankedNotes.length && filteredRankedNotes.length < rankedNotes.length) {
+      return { rankedNotes: filteredRankedNotes, removedCount: rankedNotes.length - filteredRankedNotes.length };
+    }
+    return { rankedNotes, removedCount: 0 };
   }
 
   // lib/functions/search/user-criteria.js
@@ -2701,11 +2773,12 @@ Return ONLY valid JSON:
     // --------------------------------------------------------------------------
     constructor(app, plugin2) {
       this.app = app;
-      this.llm = llmPrompt.bind(null, app, plugin2);
+      this.lastModelUsed = null;
+      this.llm = this._llmWithSearchPreference;
+      this.preferredAiModel = null;
       this.plugin = plugin2;
       this.retryCount = 0;
       this.maxRetries = 2;
-      this.progressCallback = null;
       this.searchAttempt = ATTEMPT_FIRST_PASS;
     }
     // --------------------------------------------------------------------------
@@ -2763,12 +2836,15 @@ Return ONLY valid JSON:
     // --------------------------------------------------------------------------
     // Helper: Query LLM with retry across different models until valid response
     async llmWithRetry(prompt, validateFn, options = {}) {
-      const models = preferredModels(this.app);
+      const models = this._modelsToTryFromPreference();
       const maxAttempts = Math.min(models.length, 3);
       for (let i = 0; i < maxAttempts; i++) {
-        const aiModel = i === 0 ? null : models[i];
-        console.log(`LLM attempt ${i + 1}${aiModel ? ` with model ${aiModel}` : " with default model"}`);
+        const aiModel = models[i];
+        console.log(`LLM attempt ${i + 1} with model ${aiModel}`);
         try {
+          this.lastModelUsed = aiModel;
+          if (this.plugin)
+            this.plugin.lastModelUsed = aiModel;
           const result = await this.llm(prompt, { ...options, aiModel });
           console.log("LLM response:", result);
           if (validateFn(result)) {
@@ -2820,7 +2896,7 @@ Return ONLY valid JSON:
       const rankedNotes = notes;
       this.emitProgress(`Creating search summary note for ${rankedNotes.length} result${rankedNotes.length === 1 ? "" : "s"}...`);
       try {
-        const modelUsed = preferredModel(this.app, this.plugin.lastModelUsed) || "unknown model";
+        const modelUsed = preferredModel(this.app, this.lastModelUsed) || "unknown model";
         const titlePrompt = `Create a brief, descriptive title (max 40 chars) for a search results note.
 Search query: "${userQuery}"
 Found: ${searchResult.found ? "Yes" : "No"}
@@ -2927,24 +3003,91 @@ No notes matched the search criteria.
     // --------------------------------------------------------------------------
     emitProgress(message) {
       console.log(`[SearchAgent#emitProgress] ${message}`);
-      if (this.progressCallback) {
-        this.progressCallback(message);
-      }
+      this.onProgress(message);
     }
     // --------------------------------------------------------------------------
-    onProgress(callback) {
-      this.progressCallback = callback;
+    // Wrap llmPrompt to always respect SearchAgent's preferred model unless an explicit model is provided.
+    // @param {object} app - Amplenote app object
+    // @param {object} plugin - Plugin instance
+    // @param {string} prompt - Prompt text
+    // @param {object} [options] - Options passed to llmPrompt
+    async _llmWithSearchPreference(prompt, options = {}) {
+      const mergedOptions = { ...options };
+      const aiModelExplicitlyProvided = Object.prototype.hasOwnProperty.call(mergedOptions, "aiModel");
+      if ((!aiModelExplicitlyProvided || !mergedOptions.aiModel) && this.preferredAiModel) {
+        mergedOptions.aiModel = this.preferredAiModel;
+      }
+      const result = await llmPrompt(this.app, this.plugin, prompt, mergedOptions);
+      if (mergedOptions.aiModel) {
+        this.lastModelUsed = mergedOptions.aiModel;
+        if (this.plugin)
+          this.plugin.lastModelUsed = mergedOptions.aiModel;
+      }
+      return result;
+    }
+    // --------------------------------------------------------------------------
+    // @returns {string[]} Ordered LLM model names to try, based on user preference, with the model chosen for search placed in front if available
+    _modelsToTryFromPreference() {
+      const models = preferredModels(this.app) || [];
+      if (!this.preferredAiModel)
+        return models;
+      const withoutPreferred = models.filter((model) => model !== this.preferredAiModel);
+      return [this.preferredAiModel, ...withoutPreferred];
+    }
+    // --------------------------------------------------------------------------
+    onProgress(statusText) {
+      this.progressText += `${statusText}<br /><br />`;
+    }
+    // --------------------------------------------------------------------------
+    // Persist the user's preferred model choice onto the SearchAgent instance so every phase uses it.
+    // @param {string|null} aiModel - AI model name (e.g. "gpt-5.1") or null to clear
+    setPreferredAiModel(aiModel) {
+      this.preferredAiModel = aiModel;
     }
   };
 
   // lib/functions/search-prompts.js
   async function userSearchCriteria(app) {
-    return await app.prompt("Enter your search criteria", { inputs: [
-      { type: "text", label: "Describe any identifying details of the note(s) you wish to locate" },
-      { type: "date", label: "Only notes created or changed since (optional)" },
-      { type: "tags", label: "Only return notes with this tag (optional)" },
-      { type: "string", label: "Max notes to return (optional)" }
-    ] });
+    const configuredProviderEms = configuredProvidersSorted(app.settings || {});
+    const configuredProviderNames = configuredProviderEms.map((providerEm2) => providerNameFromProviderEm(providerEm2));
+    const actions = actionsForConfiguredProviders(configuredProviderEms);
+    const promptText = configuredProviderNames.length ? `Enter your search criteria
+
+Configured LLM providers: ${configuredProviderNames.join(", ")}
+
+Tip: use a button below to run the search with a specific provider.` : "Enter your search criteria";
+    const promptOptions = {
+      inputs: [
+        { type: "text", label: "Describe any identifying details of the note(s) you wish to locate" },
+        { type: "date", label: "Only notes created or changed since (optional)" },
+        { type: "tags", label: "Only return notes with this tag (optional)" },
+        { type: "string", label: "Max notes to return (optional)" }
+      ]
+    };
+    if (actions.length) {
+      promptOptions.actions = actions;
+    }
+    const result = await app.prompt(promptText, promptOptions);
+    if (!result)
+      return null;
+    const [userQuery, changedSince, onlyTags, maxNotesCount, actionResult] = Array.isArray(result) ? result : [result];
+    const providerEm = typeof actionResult === "string" ? actionResult : null;
+    const preferredAiModel = providerEm ? modelForProvider(app.settings?.[AI_MODEL_LABEL], providerEm) : null;
+    const maxNotesCountNumber = positiveIntegerFromValue(maxNotesCount);
+    return [userQuery, changedSince, onlyTags, maxNotesCountNumber, preferredAiModel];
+  }
+  function actionsForConfiguredProviders(configuredProviderEms) {
+    return configuredProviderEms.map((providerEm) => ({
+      icon: "search",
+      label: `Search with ${providerNameFromProviderEm(providerEm)}`,
+      value: providerEm
+    }));
+  }
+  function positiveIntegerFromValue(value) {
+    if (value === void 0 || value === null)
+      return null;
+    const parsed = parseInt(String(value).trim(), 10);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
   }
 
   // lib/functions/suggest-tasks.js
@@ -3116,12 +3259,16 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
       // --------------------------------------------------------------------------
       [SEARCH_USING_AGENT_LABEL]: async function(app) {
         const searchAgent = new SearchAgent(app, this);
-        const [userQuery, changedSince, onlyTags, maxNotesCount] = await userSearchCriteria(app);
+        const result = await userSearchCriteria(app);
+        if (!result)
+          return;
+        const [userQuery, changedSince, onlyTags, maxNotesCount, preferredAiModel] = result;
+        console.debug(`Search criteria received: query="${userQuery}", changedSince=${changedSince}, onlyTags=${onlyTags}, maxNotesCount=${maxNotesCount}, preferredAiModel=${preferredAiModel}`);
         if (!userQuery?.length)
           return;
-        searchAgent.onProgress((progressText) => {
-          this.progressText += `${progressText}<br /><br />`;
-        });
+        if (preferredAiModel) {
+          searchAgent.setPreferredAiModel(preferredAiModel);
+        }
         searchAgent.emitProgress(`Starting search for ${userQuery.length}-length user query`);
         await app.openEmbed();
         await searchAgent.search(userQuery, {
@@ -3433,5 +3580,4 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-  return plugin;
-})()
+})();
