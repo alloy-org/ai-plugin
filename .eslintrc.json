@@ -1,0 +1,97 @@
+{
+  "env": {
+    "browser": true,
+    "es2021": true,
+    "jquery": true
+  },
+  "extends": [
+    "eslint:recommended",
+    "plugin:react/recommended",
+    "plugin:react-hooks/recommended"
+  ],
+  "parserOptions": {
+    "ecmaVersion": "latest",
+    "sourceType": "module",
+    "ecmaFeatures": {
+      "jsx": true
+    }
+  },
+  "plugins": [
+    "react",
+    "react-hooks"
+  ],
+  "globals": {
+    "GitClear": "readonly",
+    "Cookies": "readonly",
+    "Sentry": "readonly",
+    "$": "readonly"
+  },
+  "rules": {
+    "array-bracket-spacing": ["error", "always"],
+    "arrow-body-style": ["error", "as-needed"],
+    "arrow-parens": ["error", "as-needed"],
+    "arrow-spacing": ["error", { "before": true, "after": true }],
+    "comma-dangle": ["error", "never"],
+    "comment-pattern": ["warn", "^// -{10,}$", { "matchCommentsOnly": true }],
+    "func-style": ["error", "declaration"],
+    "indent": ["error", 2, { "SwitchCase": 1 }],
+    "jsx-quotes": ["error", "prefer-double"],
+    "max-len": ["error", {
+      "code": 120,
+      "ignoreComments": true,
+      "ignoreStrings": true,
+      "ignoreTemplateLiterals": true
+    }],
+    "no-multiple-empty-lines": ["error", {
+      "max": 1,
+      "maxBOF": 0,
+      "maxEOF": 0
+    }],
+    "no-var": ["error"],
+    "object-curly-spacing": ["error", "always"],
+    "object-shorthand": ["error", "always"],
+    "quotes": ["error", "double", { 
+      "allowTemplateLiterals": true,
+      "avoidEscape": true
+    }],
+    "react/jsx-boolean-value": ["error", "never"],
+    "react/jsx-curly-spacing": ["error", {
+      "when": "always",
+      "children": true,
+      "spacing": {
+        "objectLiterals": "never"
+      }
+    }],
+    "react/jsx-first-prop-new-line": ["error", "multiline"],
+    "react/jsx-indent": ["error", 2],
+    "react/jsx-indent-props": ["error", 2],
+    "react/jsx-max-props-per-line": ["error", {
+      "maximum": 1,
+      "when": "multiline"
+    }],
+    "react/jsx-tag-spacing": ["error", {
+      "closingSlash": "never",
+      "beforeSelfClosing": "always",
+      "afterOpening": "never",
+      "beforeClosing": "never"
+    }],
+    "react/prop-types": "error",
+    "react/self-closing-comp": ["error", {
+      "component": true,
+      "html": true
+    }],
+    "semi": ["error", "never"],
+    "space-before-blocks": ["error", "always"],
+    "space-before-function-paren": ["error", {
+      "anonymous": "always",
+      "named": "never",
+      "asyncArrow": "always"
+    }],
+    "template-curly-spacing": ["error", "always"]
+  },
+  "settings": {
+    "react": {
+      "version": "detect"
+    }
+  }
+}
