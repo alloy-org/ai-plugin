@@ -10,7 +10,7 @@ const AWAIT_TIME = 30000;
 // These are filler words from phrases like "Return notes with", "Notes that mention", etc.
 const PREFIX_FILLER_WORDS = [
   "about", "all", "any", "can", "contain", "containing", "find", "me", "mention", "note", "notes",
-  "notebook", "reference", "return", "show", "some", "talk", "with", "you" ];
+  "notebook", "reference", "return", "show", "some", "talk", "with", "written", "you" ];
 
 // --------------------------------------------------------------------------------------
 // Test cases: [userQuery, expectedContentWords]
@@ -21,6 +21,7 @@ const PREFIX_FILTERING_TEST_CASES = [
   ["Any notes from my notebook that happen to talk about Python programming tutorials", ["programming", "python", "tutorial"], []],
   ["Find some notes containing vacation photos from Hawaii", ["hawaii", "photo", "vacation"], []],
   ["Show me ALL THE notes you can find with tax documents from 2024", ["2024", "document", "tax"], ["return"]],
+  ["Anything I've written about that the popular systems for taking great notes", [ "note", "system" ], ["note"]],
 ];
 
 // --------------------------------------------------------------------------------------
@@ -46,7 +47,7 @@ describe("Query Breakdown - Prefix Filtering", () => {
       ];
 
       for (const fillerWord of PREFIX_FILLER_WORDS) {
-        if (!allowedFillerWords.includes(fillerWord)) {
+        if (!allowedFillerWords.includes(fillerWord.replace(/s$/, ""))) {
           expect(llmReturnedKeywords).not.toContain(fillerWord);
         }
       }
