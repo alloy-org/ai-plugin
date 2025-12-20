@@ -40,20 +40,23 @@ describe("Query Breakdown - Prefix Filtering", () => {
       const criteria = await phase1_analyzeQuery(searchAgent, userQuery, {});
 
       // Verify no prefix filler words appear in keywords
-      const allKeywords = [
+      const llmReturnedKeywords = [
         ...criteria.primaryKeywords.map(keyword => keyword.toLowerCase()),
         ...criteria.secondaryKeywords.map(keyword => keyword.toLowerCase()),
       ];
 
       for (const fillerWord of PREFIX_FILLER_WORDS) {
         if (!allowedFillerWords.includes(fillerWord)) {
-          expect(allKeywords).not.toContain(fillerWord);
+          expect(llmReturnedKeywords).not.toContain(fillerWord);
         }
       }
 
       // Verify at least one expected content word is present
-      const hasExpectedWord = allKeywords.some(keyword =>
-        expectedContentWords.some(expected => keyword.includes(expected))
+      const hasExpectedWord = expectedContentWords.every(expectedWord =>
+        llmReturnedKeywords.find(wordOrPhrase => {
+          const words = wordOrPhrase.split(" ").map(w => w.replace(/s$/, ""));
+          return words.includes(expectedWord);
+        })
       );
       expect(hasExpectedWord).toBe(true);
     }, AWAIT_TIME);
