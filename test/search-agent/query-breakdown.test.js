@@ -9,28 +9,18 @@ const AWAIT_TIME = 30000;
 // Words that commonly appear in user query prefixes but should never be extracted as keywords.
 // These are filler words from phrases like "Return notes with", "Notes that mention", etc.
 const PREFIX_FILLER_WORDS = [
-  "about",
-  "any",
-  "containing",
-  "find",
-  "me",
-  "mention",
-  "note",
-  "notes",
-  "return",
-  "show",
-  "with",
-];
+  "about", "all", "any", "can", "contain", "containing", "find", "me", "mention", "note", "notes",
+  "notebook", "reference", "return", "show", "some", "talk", "with", "you" ];
 
 // --------------------------------------------------------------------------------------
 // Test cases: [userQuery, expectedContentWords]
 // Each test verifies that prefix filler words are excluded and expected content words are found.
 const PREFIX_FILTERING_TEST_CASES = [
-  ["Return notes with recipes for chocolate cake", ["cake", "chocolate", "recipe"], []],
-  ["Notes that mention our quarterly budget meeting", ["budget", "meeting", "quarterly"], []],
-  ["Any notes about Python programming tutorials", ["programming", "python", "tutorial"], []],
-  ["Find notes containing vacation photos from Hawaii", ["hawaii", "photo", "vacation"], []],
-  ["Show me notes with tax documents from 2024", ["2024", "document", "tax"], ["return"]],
+  ["Return all notes that contain recipes for chocolate cake", ["cake", "chocolate", "recipe"], []],
+  ["Present ALL notes that make mention or reference to our quarterly budget meeting", ["budget", "meeting", "quarterly"], []],
+  ["Any notes from my notebook that happen to talk about Python programming tutorials", ["programming", "python", "tutorial"], []],
+  ["Find some notes containing vacation photos from Hawaii", ["hawaii", "photo", "vacation"], []],
+  ["Show me ALL THE notes you can find with tax documents from 2024", ["2024", "document", "tax"], ["return"]],
 ];
 
 // --------------------------------------------------------------------------------------
