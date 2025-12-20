@@ -1,4 +1,4 @@
-import { AI_MODEL_LABEL, SEARCH_USING_AGENT_LABEL } from "constants/settings"
+import { AI_MODEL_LABEL } from "constants/settings"
 import SearchAgent from "functions/search-agent"
 import {
   defaultTestModel,
@@ -6,7 +6,7 @@ import {
   mockApp,
   mockNote,
   mockPlugin,
-  providersWithApiKey
+  noteTimestampFromNow,
 } from "./test-helpers"
 
 const AWAIT_TIME = 60000;
@@ -24,15 +24,16 @@ describe("Search Agent", () => {
       // Note 0: Has image but no sandwich content
       mockNote("# My Vacation\n\nBeach trip. Amazing sunset!", "Beach Trip 2024", "note-001", {
         images: [{ url: "https://example.com/beach.jpg", width: 1200, height: 800 }],
-        tags: ["vacation", "photos"], updated: "2024-12-01T10:00:00Z"
+        tags: ["vacation", "photos"], updated: noteTimestampFromNow({ daysAgo: 7 })
       }),
 
       // Note 1: Has sandwich content but no image
       mockNote("# Restaurant Review\n\nTried a new deli. Pastrami was great!", "NYC Deli", "note-002",
-        { tags: ["food", "nyc"], updated: "2024-11-20T15:30:00Z" }
+        { tags: ["food", "nyc"], updated: noteTimestampFromNow({ monthsAgo: 1 }) }
       ),
 
-      // Note 2: THE MATCH - Has both image and sandwich with mystery meat in New York
+      // Note 2: THE MATCH - Has both image and sandwich with mystery meat in New York, though it's
+      // the least recent of notes, to make the challenge sporting
       mockNote(
         "# Food Adventures in NYC\n\nFound an amazing street vendor in Manhattan. Had the most " +
         "delicious sandwich with bologna that I couldn't identify, but it was incredible! " +
@@ -42,7 +43,7 @@ describe("Search Agent", () => {
             { url: "https://example.com/sandwich.jpg", width: 800, height: 600 },
             { url: "https://example.com/vendor.jpg", width: 800, height: 600 }
           ],
-          tags: ["food", "nyc", "street-food"], updated: "2024-12-10T14:20:00Z"
+          tags: ["food", "nyc", "street-food"], updated: noteTimestampFromNow({ monthsAgo: 11 })
         }
       ),
 
@@ -50,7 +51,7 @@ describe("Search Agent", () => {
       mockNote("# Pizza Night\n\nMade pizza from scratch. Perfect dough!", "Pizza Success", "note-004",
         {
           images: [{ url: "https://example.com/pizza.jpg", width: 1000, height: 750 }],
-          tags: ["food", "cooking"], updated: "2024-11-15T19:00:00Z"
+          tags: ["food", "cooking"], updated: noteTimestampFromNow({ monthsAgo: 2 })
         }
       ),
 
@@ -58,7 +59,7 @@ describe("Search Agent", () => {
       mockNote(
         "# NY Restaurants\n\nBest places:\n- Joe's Pizza\n- Katz's Deli\n- Shake Shack",
         "NY Food Guide", "note-005",
-        { tags: ["food", "guide", "nyc"], updated: "2024-10-05T12:00:00Z" }
+        { tags: ["food", "guide", "nyc"], updated: noteTimestampFromNow({ monthsAgo: 3 }) }
       ),
 
       // Note 5: Travel note with images, no food content
@@ -68,33 +69,33 @@ describe("Search Agent", () => {
             { url: "https://example.com/eiffel.jpg", width: 900, height: 1200 },
             { url: "https://example.com/colosseum.jpg", width: 1200, height: 900 }
           ],
-          tags: ["travel", "europe"], updated: "2024-09-20T08:00:00Z"
+          tags: ["travel", "europe"], updated: noteTimestampFromNow({ monthsAgo: 4 })
         }
       ),
 
       // Note 6: Has sandwich in title but no image or detailed content
       mockNote("# Ideas\n\nTry:\n- BLT\n- Club\n- Reuben", "Sandwich Wishlist", "note-007",
-        { tags: ["food", "todo"], updated: "2024-08-10T16:00:00Z" }
+        { tags: ["food", "todo"], updated: noteTimestampFromNow({ monthsAgo: 5 }) }
       ),
 
       // Note 7: Has image and mentions meat but not sandwich
       mockNote("# BBQ Party\n\nGrilled steaks and ribs. Great BBQ sauce!", "Weekend BBQ", "note-008",
         {
           images: [{ url: "https://example.com/bbq.jpg", width: 1100, height: 800 }],
-          tags: ["food", "bbq", "party"], updated: "2024-07-22T18:30:00Z"
+          tags: ["food", "bbq", "party"], updated: noteTimestampFromNow({ monthsAgo: 6 })
         }
       ),
 
       // Note 8: Work note with no food content or images
       mockNote("# Meeting Notes\n\nQ4 goals and timeline. Follow up on budget.", "Q4 Planning",
-        "note-009", { tags: ["work", "meetings"], updated: "2024-12-05T09:00:00Z" }
+        "note-009", { tags: ["work", "meetings"], updated: noteTimestampFromNow({ monthsAgo: 7 }) }
       ),
 
       // Note 9: Has image and New York but talks about buildings, not food
       mockNote("# NYC Architecture\n\nIncredible buildings. Love Art Deco!", "Architecture Notes",
         "note-010", {
           images: [{ url: "https://example.com/building.jpg", width: 800, height: 1200 }],
-          tags: ["architecture", "nyc"], updated: "2024-06-15T11:00:00Z"
+          tags: ["architecture", "nyc"], updated: noteTimestampFromNow({ monthsAgo: 10 })
         }
       )
     ];

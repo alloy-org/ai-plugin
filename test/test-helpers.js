@@ -29,15 +29,14 @@ export function aiProviderTestKey(providerEm) {
 }
 
 // --------------------------------------------------------------------------------------
-export function defaultTestModel(providerEm) {
-  return PROVIDER_DEFAULT_MODEL_IN_TEST[providerEm];
+export function contentFromFileName(fileName) {
+  const filePath = path.join(__dirname, `fixtures/${ fileName }`);
+  return fs.readFileSync(filePath, "utf8");
 }
 
 // --------------------------------------------------------------------------------------
-// Returns an array of provider identifiers that have API keys configured in the environment
-export function providersWithApiKey() {
-  const allProviders = Object.keys(PROVIDER_SETTING_KEY_LABELS);
-  return allProviders.filter(providerEm => aiProviderTestKey(providerEm));
+export function defaultTestModel(providerEm) {
+  return PROVIDER_DEFAULT_MODEL_IN_TEST[providerEm];
 }
 
 // --------------------------------------------------------------------------------------
@@ -212,12 +211,6 @@ export function mockApp(notes, { plugin = null } = {}) {
 }
 
 // --------------------------------------------------------------------------------------
-export function contentFromFileName(fileName) {
-  const filePath = path.join(__dirname, `fixtures/${ fileName }`);
-  return fs.readFileSync(filePath, "utf8");
-}
-
-// --------------------------------------------------------------------------------------
 export function mockNote(content, name, uuid, options = {}) {
   const note = {};
   note.body = content;
@@ -297,4 +290,29 @@ export function mockNote(content, name, uuid, options = {}) {
   }
 
   return note;
+}
+
+// --------------------------------------------------------------------------------------
+// @param {{ daysAgo?: number, monthsAgo?: number }} age - Relative note age from "now"
+// @returns {string} ISO timestamp for a note created/updated time relative to now
+export function noteTimestampFromNow(age = {}) {
+  const { daysAgo, monthsAgo } = age;
+  const timestamp = new Date();
+
+  if (Number.isInteger(monthsAgo) && monthsAgo > 0) {
+    timestamp.setMonth(timestamp.getMonth() - monthsAgo);
+  }
+
+  if (Number.isInteger(daysAgo) && daysAgo > 0) {
+    timestamp.setDate(timestamp.getDate() - daysAgo);
+  }
+
+  return timestamp.toISOString();
+}
+
+// --------------------------------------------------------------------------------------
+// Returns an array of provider identifiers that have API keys configured in the environment
+export function providersWithApiKey() {
+  const allProviders = Object.keys(PROVIDER_SETTING_KEY_LABELS);
+  return allProviders.filter(providerEm => aiProviderTestKey(providerEm));
 }
