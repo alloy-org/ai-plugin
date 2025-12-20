@@ -1,5 +1,5 @@
-import { phase5_sanityCheck } from "functions/search/candidate-evaluation"
-import { MIN_KEEP_RESULT_SCORE } from "constants/search-settings"
+import { phase5_sanityCheck } from "functions/search/candidate-evaluation.js"
+import { MIN_KEEP_RESULT_SCORE } from "constants/search-settings.js"
 
 describe("Candidate evaluation (phase5 pruning)", () => {
   const baseCriteria = { resultCount: 10 };
@@ -38,5 +38,3 @@ describe("Candidate evaluation (phase5 pruning)", () => {
     expect(result.notes.map(n => n.note.uuid)).toEqual(["only-1", "only-2"]);
   });
 });
-
-

@@ -1,7 +1,7 @@
-import { AI_MODEL_LABEL, PROVIDER_SETTING_KEY_LABELS } from "constants/settings"
-import { PROVIDER_DEFAULT_MODEL, MIN_API_KEY_CHARACTERS } from "constants/provider"
-import { userSearchCriteria } from "functions/search-prompts"
-import { mockApp } from "./test-helpers"
+import { AI_MODEL_LABEL, PROVIDER_SETTING_KEY_LABELS } from "constants/settings.js"
+import { PROVIDER_DEFAULT_MODEL, MIN_API_KEY_CHARACTERS } from "constants/provider.js"
+import { userSearchCriteria } from "functions/search-prompts.js"
+import { mockApp } from "../test-helpers.js"
 
 // --------------------------------------------------------------------------------------
 describe("userSearchCriteria", () => {
@@ -41,5 +41,3 @@ describe("userSearchCriteria", () => {
     expect(preferredAiModel).toBeNull();
   });
 });
-
-

@@ -1,5 +1,5 @@
-import { AI_MODEL_LABEL } from "constants/settings"
-import SearchAgent from "functions/search-agent"
+import { AI_MODEL_LABEL } from "constants/settings.js"
+import SearchAgent from "functions/search-agent.js"
 import {
   defaultTestModel,
   mockAlertAccept,
@@ -7,7 +7,7 @@ import {
   mockNote,
   mockPlugin,
   noteTimestampFromNow,
-} from "./test-helpers"
+} from "../test-helpers.js"
 
 const AWAIT_TIME = 60000;
 const DEBUG_MULTIPLIER = 5; // When debugging tests, this will increase timeouts

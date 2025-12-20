@@ -1,6 +1,6 @@
-import { phase2_collectCandidates } from "functions/search/candidate-collection"
-import { ATTEMPT_KEYWORD_PAIRS } from "constants/search-settings"
-import { mockApp, mockNote } from "./test-helpers"
+import { phase2_collectCandidates } from "functions/search/candidate-collection.js"
+import { ATTEMPT_KEYWORD_PAIRS } from "constants/search-settings.js"
+import { mockApp, mockNote } from "../test-helpers.js"
 
 describe("Candidate collection (strategy precedence + matchCount)", () => {
   const primaryKeywords = ["project", "meeting", "summary"];
@@ -162,5 +162,3 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     expect(high.matchCount).toBeGreaterThan(1);
   });
 });
-
-
