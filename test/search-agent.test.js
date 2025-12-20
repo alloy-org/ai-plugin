@@ -155,7 +155,7 @@ describe("Search Agent", () => {
     });
 
     expect(result.found).toBe(true);
-    const resultNote = result.note || result.notes[0];
+    const resultNote = result.note || (result.notes && result.notes[0] && result.notes[0].note);
     expect(resultNote.uuid).toBe("note-tag-001");
   }, AWAIT_TIME*DEBUG_MULTIPLIER);
 });
