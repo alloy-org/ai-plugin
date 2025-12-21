@@ -24,7 +24,7 @@ describe("Candidate evaluation (phase5 pruning)", () => {
     ];
 
     const result = await phase5_sanityCheck(searchAgent, rankedNotes, baseCriteria, "query");
-    expect(result.notes.map(n => n.note.uuid)).toEqual(["good-1"]);
+    expect(result.notes.map(n => n.uuid)).toEqual(["good-1"]);
   });
 
   it("does not prune if it would remove every note", async () => {
@@ -35,6 +35,6 @@ describe("Candidate evaluation (phase5 pruning)", () => {
     ];
 
     const result = await phase5_sanityCheck(searchAgent, rankedNotes, baseCriteria, "query");
-    expect(result.notes.map(n => n.note.uuid)).toEqual(["only-1", "only-2"]);
+    expect(result.notes.map(n => n.uuid)).toEqual(["only-1", "only-2"]);
   });
 });
