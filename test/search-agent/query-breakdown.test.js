@@ -29,36 +29,65 @@ describe("Query Breakdown - Prefix Filtering", () => {
   const plugin = mockPlugin();
 
   // --------------------------------------------------------------------------------------
-  it.each(PREFIX_FILTERING_TEST_CASES)(
-    "should exclude prefix filler words and find content keywords for: %s",
-    async (userQuery, expectedContentWords, allowedFillerWords) => {
-      const app = mockApp([]);
-      const availableModels = providersWithApiKey();
-      const modelName = availableModels[Math.floor(Math.random() * availableModels.length)];
-      app.settings[AI_MODEL_LABEL] = defaultTestModel(modelName);
+  // Shared test function to verify prefix filtering behavior
+  // @param {string} userQuery - The natural language query to test
+  // @param {string[]} expectedContentWords - Words that should appear in extracted keywords
+  // @param {string[]} allowedFillerWords - Filler words that are allowed in this specific case
+  async function testPrefixFiltering(constEntry) {
+    const [ userQuery, expectedContentWords, allowedFillerWords ] = constEntry;
+    const app = mockApp([]);
+    const availableModels = providersWithApiKey();
+    const modelName = availableModels[Math.floor(Math.random() * availableModels.length)];
+    app.settings[AI_MODEL_LABEL] = defaultTestModel(modelName);
 
-      const searchAgent = new SearchAgent(app, plugin);
-      const criteria = await phase1_analyzeQuery(searchAgent, userQuery, {});
+    const searchAgent = new SearchAgent(app, plugin);
+    const criteria = await phase1_analyzeQuery(searchAgent, userQuery, {});
 
-      // Verify no prefix filler words appear in keywords
-      const llmReturnedKeywords = [
-        ...criteria.primaryKeywords.map(keyword => keyword.toLowerCase()),
-        ...criteria.secondaryKeywords.map(keyword => keyword.toLowerCase()),
-      ];
+    // Verify no prefix filler words appear in keywords
+    const llmReturnedKeywords = [
+      ...criteria.primaryKeywords.map(keyword => keyword.toLowerCase()),
+      ...criteria.secondaryKeywords.map(keyword => keyword.toLowerCase()),
+    ];
 
-      for (const fillerWord of PREFIX_FILLER_WORDS) {
-        if (!allowedFillerWords.includes(fillerWord.replace(/s$/, ""))) {
-          expect(llmReturnedKeywords).not.toContain(fillerWord);
-        }
+    for (const fillerWord of PREFIX_FILLER_WORDS) {
+      if (!allowedFillerWords.includes(fillerWord.replace(/s$/, ""))) {
+        expect(llmReturnedKeywords).not.toContain(fillerWord);
       }
+    }
 
-      // Verify at least one expected content word is present
-      const hasExpectedWord = expectedContentWords.every(expectedWord =>
-        llmReturnedKeywords.find(wordOrPhrase => {
-          const words = wordOrPhrase.split(" ").map(w => w.replace(/s$/, ""));
-          return words.includes(expectedWord);
-        })
-      );
-      expect(hasExpectedWord).toBe(true);
-    }, AWAIT_TIME);
+    // Verify at least one expected content word is present
+    const hasExpectedWord = expectedContentWords.every(expectedWord =>
+      llmReturnedKeywords.find(wordOrPhrase => {
+        const words = wordOrPhrase.split(" ").map(w => w.replace(/s$/, ""));
+        return words.includes(expectedWord);
+      })
+    );
+    expect(hasExpectedWord).toBe(true);
+  }
+
+  // --------------------------------------------------------------------------------------
+  // Individual test cases - each can be run independently via IDE
+  it("should exclude prefix filler words for: Return all notes that contain recipes for chocolate cake", async () => {
+    await testPrefixFiltering(PREFIX_FILTERING_TEST_CASES[0]);
+  }, AWAIT_TIME);
+
+  it("should exclude prefix filler words for: Present ALL notes that make mention or reference to our quarterly budget meeting", async () => {
+    await testPrefixFiltering(PREFIX_FILTERING_TEST_CASES[1]);
+  }, AWAIT_TIME);
+
+  it("should exclude prefix filler words for: Any notes from my notebook that happen to talk about Python programming tutorials", async () => {
+    await testPrefixFiltering(PREFIX_FILTERING_TEST_CASES[2]);
+  }, AWAIT_TIME);
+
+  it("should exclude prefix filler words for: Find some notes containing vacation photos from Hawaii", async () => {
+    await testPrefixFiltering(PREFIX_FILTERING_TEST_CASES[3]);
+  }, AWAIT_TIME);
+
+  it("should exclude prefix filler words for: Show me ALL THE notes you can find with tax documents from 2024", async () => {
+    await testPrefixFiltering(PREFIX_FILTERING_TEST_CASES[4]);
+  }, AWAIT_TIME);
+
+  it("should exclude prefix filler words for: Anything I've written about that the popular systems for taking great notes", async () => {
+    await testPrefixFiltering(PREFIX_FILTERING_TEST_CASES[5]);
+  }, AWAIT_TIME);
 });

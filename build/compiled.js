@@ -2720,7 +2720,7 @@ User Query: "${userQuery}"
 
 Extract:
 1. PRIMARY_KEYWORDS: 3-5 words most likely to appear in the note TITLE
-2. SECONDARY_KEYWORDS: 5-10 additional words likely in note content. 
+2. SECONDARY_KEYWORDS: 5-10 additional words likely in note content
    Include the category of the primary keywords (e.g., "sandwich" as "food") or synonyms for the 
    words in the note title (e.g., "New York" as "NY"). 
 3. EXACT_PHRASE: If user wants exact text match, extract it (or null)
