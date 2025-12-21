@@ -1121,7 +1121,6 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     const promptKey = jsonResponse ? "llmPromptJson" : null;
     const response = await responseFromStreamOrChunk(app, fetchResponse, modelToUse, promptKey, null, null);
     if (response && jsonResponse) {
-      console.log("Received what should be json response:", response);
       return extractJsonFromString(response);
     } else {
       return response;
@@ -2255,7 +2254,7 @@ Will be utilized after your preliminary approval`,
       await addMatchesFromFilterNotes(searchAgent, candidatesByUuid, secondaryQueries, tagRequirement, maxResultsPerQuery);
     }
     if (candidatesByUuid.size < minFilterNotesResults) {
-      console.log(`[${strategyName}] filterNotes candidates (${candidatesByUuid.size}) below minimum (${minFilterNotesResults}), supplementing with app.searchNotes`);
+      console.log(`[${strategyName}] Too few candidates (${candidatesByUuid.size}) below minimum (${minFilterNotesResults}), supplementing with app.searchNotes`);
       await addMatchesFromSearchNotes(searchAgent, candidatesByUuid, primaryQueries, maxResultsPerQuery);
       if (candidatesByUuid.size < minFilterNotesResults && secondaryQueries.length) {
         console.log(`[${strategyName}] additionally searching ${secondaryQueries.length} with app.searchNotes since we only located ${candidatesByUuid.size} candidates so far`);
@@ -2339,6 +2338,7 @@ Will be utilized after your preliminary approval`,
     candidatesByUuid.set(note.uuid, { ...note, matchCount: increment });
   }
   async function addMatchesFromFilterNotes(searchAgent, candidatesByUuid, queries, tagRequirement, maxResultsPerQuery) {
+    let notesFound = [];
     for (let i = 0; i < queries.length; i += MAX_PARALLEL_SEARCHES) {
       const batch = queries.slice(i, i + MAX_PARALLEL_SEARCHES);
       const batchResults = await Promise.all(
@@ -2348,6 +2348,8 @@ Will be utilized after your preliminary approval`,
             query,
             tag: tagRequirement?.mustHave || void 0
           });
+          if (results.length)
+            notesFound = notesFound.concat(results);
           const limited = maxResultsPerQuery ? results.slice(0, maxResultsPerQuery) : results;
           return uniqueUuidNoteCandidatesFromNotes(limited);
         })
@@ -2358,8 +2360,12 @@ Will be utilized after your preliminary approval`,
         }
       }
     }
+    const foundNoteNames = notesFound.map((n) => n.name);
+    const uniqueNotes = foundNoteNames.filter((n, i) => foundNoteNames.indexOf(n) === i);
+    console.log(`[filterNotes] Adding matches (up to ${maxResultsPerQuery || "however many"} results) from via queries`, queries.map((q) => q.join(" ")), `to ${uniqueNotes.length} note(s)`, uniqueNotes);
   }
   async function addMatchesFromSearchNotes(searchAgent, candidatesByUuid, queries, maxResultsPerQuery) {
+    let notesFound = [];
     for (let i = 0; i < queries.length; i += MAX_PARALLEL_SEARCHES) {
       const batch = queries.slice(i, i + MAX_PARALLEL_SEARCHES);
       const batchResults = await Promise.all(
@@ -2367,6 +2373,8 @@ Will be utilized after your preliminary approval`,
           const query = queryStringFromCombination(queryCombo);
           const results = await searchAgent.app.searchNotes(query);
           const limited = maxResultsPerQuery ? results.slice(0, maxResultsPerQuery) : results;
+          if (results.length)
+            notesFound = notesFound.concat(results);
           return uniqueUuidNoteCandidatesFromNotes(limited);
         })
       );
@@ -2376,6 +2384,9 @@ Will be utilized after your preliminary approval`,
         }
       }
     }
+    const foundNoteNames = notesFound.map((n) => n.name);
+    const uniqueNotes = foundNoteNames.filter((n, i) => foundNoteNames.indexOf(n) === i);
+    console.log(`[searchNotes] Adding matches (up to ${maxResultsPerQuery || "however many"} results) from via queries`, queries.map((q) => q.join(" ")), `to ${uniqueNotes.length} note(s)`, uniqueNotes);
   }
 
   // lib/functions/search/candidate-evaluation.js
@@ -2493,7 +2504,9 @@ Return ONLY valid JSON array:
     }
     const pruneResult = rankedNotesAfterRemovingPoorMatches(rankedNotes);
     if (pruneResult.removedCount) {
-      console.log(`Pruned ${pruneResult.removedCount} low-quality results (score < ${MIN_KEEP_RESULT_SCORE} or "poor match")`);
+      console.log(`Pruned ${pruneResult.removedCount} low-quality results (score < ${MIN_KEEP_RESULT_SCORE} or "poor match"), leaving ${pruneResult.rankedNotes.length} notes:`, pruneResult.rankedNotes);
+    } else {
+      console.log(`No results pruned among ${rankedNotes.length} candidates:`, rankedNotes);
     }
     rankedNotes = pruneResult.rankedNotes;
     const topResult = rankedNotes[0];
@@ -2720,9 +2733,11 @@ User Query: "${userQuery}"
 
 Extract:
 1. PRIMARY_KEYWORDS: 3-5 words most likely to appear in the note TITLE
+   Return all keywords in singular form (e.g., "recipe" not "recipes")
 2. SECONDARY_KEYWORDS: 5-10 additional words likely in note content
    Include the category of the primary keywords (e.g., "sandwich" as "food") or synonyms for the 
-   words in the note title (e.g., "New York" as "NY"). 
+   words in the note title (e.g., "New York" as "NY").
+   Return all keywords in singular form (e.g., "document" not "documents")
 3. EXACT_PHRASE: If user wants exact text match, extract it (or null)
 4. CRITERIA:
    - containsPDF: Did the user request notes with PDF attachments?
@@ -2777,6 +2792,7 @@ Return ONLY valid JSON:
       this.llm = this._llmWithSearchPreference;
       this.preferredAiModel = null;
       this.plugin = plugin2;
+      this.progressCallback = null;
       this.retryCount = 0;
       this.maxRetries = 2;
       this.searchAttempt = ATTEMPT_FIRST_PASS;
@@ -2846,7 +2862,6 @@ Return ONLY valid JSON:
           if (this.plugin)
             this.plugin.lastModelUsed = aiModel;
           const result = await this.llm(prompt, { ...options, aiModel });
-          console.log("LLM response:", result);
           if (validateFn(result)) {
             console.log("LLM response validated successfully");
             return result;
@@ -2939,12 +2954,16 @@ No notes matched the search criteria.
         return {
           uuid: summaryNoteHandle.uuid,
           name: noteTitle.trim(),
-          url: await summaryNoteHandle.url()
+          url: noteUrlFromUUID(summaryNoteHandle.uuid)
         };
       } catch (error) {
         console.error("Failed to create search summary note:", error);
         return null;
       }
+    }
+    // --------------------------------------------------------------------------
+    onProgress(callback) {
+      this.progressCallback = callback;
     }
     // --------------------------------------------------------------------------
     // Helper: Parallel execution with concurrency limit
@@ -3266,6 +3285,9 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
         console.debug(`Search criteria received: query="${userQuery}", changedSince=${changedSince}, onlyTags=${onlyTags}, maxNotesCount=${maxNotesCount}, preferredAiModel=${preferredAiModel}`);
         if (!userQuery?.length)
           return;
+        searchAgent.onProgress((progressText) => {
+          this.progressText += `${progressText}<br /><br />`;
+        });
         if (preferredAiModel) {
           searchAgent.setPreferredAiModel(preferredAiModel);
         }
@@ -3580,4 +3602,5 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-})();
+  return plugin;
+})()
