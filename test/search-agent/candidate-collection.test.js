@@ -8,24 +8,24 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
 
   // Shared notes reused across tests (brief, realistic)
   const noteHighMatch = mockNote(
-    "# Project notes\n\nMeeting summary and next steps.",
     "Project meeting summary",
+    "# Project notes\n\nMeeting summary and next steps.",
     "cc-001"
   );
-  const notePrimaryA = mockNote("# Work\n\nProject kickoff details.", "Project kickoff", "cc-002");
-  const notePrimaryB = mockNote("# Work\n\nMeeting notes for Q4.", "Q4 meeting notes", "cc-003");
-  const notePrimaryC = mockNote("# Work\n\nWeekly summary draft.", "Weekly summary", "cc-004");
+  const notePrimaryA = mockNote("Project kickoff", "# Work\n\nProject kickoff details.", "cc-002");
+  const notePrimaryB = mockNote("Q4 meeting notes", "# Work\n\nMeeting notes for Q4.", "cc-003");
+  const notePrimaryC = mockNote("Weekly summary", "# Work\n\nWeekly summary draft.", "cc-004");
 
-  const noteSecondaryA = mockNote("# Work\n\nAgenda for tomorrow.", "Team agenda", "cc-005");
-  const noteSecondaryB = mockNote("# Work\n\nAction items list.", "Action items", "cc-006");
-  const noteSecondaryC = mockNote("# Work\n\nFollow-up tasks.", "Follow-up plan", "cc-007");
+  const noteSecondaryA = mockNote("Team agenda", "# Work\n\nAgenda for tomorrow.", "cc-005");
+  const noteSecondaryB = mockNote("Action items", "# Work\n\nAction items list.", "cc-006");
+  const noteSecondaryC = mockNote("Follow-up plan", "# Work\n\nFollow-up tasks.", "cc-007");
 
-  const noteExtra1 = mockNote("# Work\n\nProject timeline.", "Project timeline", "cc-008");
-  const noteExtra2 = mockNote("# Work\n\nMeeting prep.", "Meeting prep", "cc-009");
-  const noteExtra3 = mockNote("# Work\n\nSummary snippet.", "Summary snippet", "cc-010");
-  const noteExtra4 = mockNote("# Work\n\nDecision log.", "Decision log", "cc-011");
+  const noteExtra1 = mockNote("Project timeline", "# Work\n\nProject timeline.", "cc-008");
+  const noteExtra2 = mockNote("Meeting prep", "# Work\n\nMeeting prep.", "cc-009");
+  const noteExtra3 = mockNote("Summary snippet", "# Work\n\nSummary snippet.", "cc-010");
+  const noteExtra4 = mockNote("Decision log", "# Work\n\nDecision log.", "cc-011");
 
-  const noteShouldNotMatch = mockNote("# Personal\n\nGrocery list.", "Groceries", "cc-999");
+  const noteShouldNotMatch = mockNote("Groceries", "# Personal\n\nGrocery list.", "cc-999");
 
   const allNotes = [
     noteHighMatch,

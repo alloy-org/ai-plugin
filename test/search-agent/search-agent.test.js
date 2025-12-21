@@ -21,51 +21,51 @@ describe("Search Agent", () => {
   it("should find note with image and sandwich text", async () => {
     // Create 10 notes with varying content
     const notes = [
-      mockNote("# My Vacation\n\nBeach trip. Amazing sunset!", "Beach Trip 2024", "note-001", {
+      mockNote("Beach Trip 2024", "# My Vacation\n\nBeach trip. Amazing sunset!", "note-001", {
         images: [{url: "https://example.com/beach.jpg"}],
         tags: ["vacation", "photos"], updated: noteTimestampFromNow({daysAgo: 7})
       }),
-      mockNote("# Restaurant Review\n\nTried a new deli. Pastrami was great!", "NYC Deli", "note-002",
+      mockNote("NYC Deli", "# Restaurant Review\n\nTried a new deli. Pastrami was great!", "note-002",
         {tags: ["food", "nyc"], updated: noteTimestampFromNow({monthsAgo: 1})}
       ),
 
       // Note 2: THE MATCH - Has both image and sandwich with mystery meat in New York, though it's
       // the least recent of notes, to make the challenge sporting
-      mockNote("# Food Adventures in NYC\n\nFound an amazing street vendor in Manhattan. Had the most delicious sandwich with bologna that I couldn't identify, but it was incredible! Secret family recipe from New York. Need to find this cart again!\n\nSpicy tangy sauce.",
-        "Street Food Discovery", "note-003", {
+      mockNote("Street Food Discovery", "# Food Adventures in NYC\n\nFound an amazing street vendor in Manhattan. Had the most delicious sandwich with bologna that I couldn't identify, but it was incredible! Secret family recipe from New York. Need to find this cart again!\n\nSpicy tangy sauce.",
+        "note-003", {
           images: [{url: "https://example.com/sandwich.jpg"}, {url: "https://example.com/vendor.jpg"}],
           tags: ["food", "nyc", "street-food"], updated: noteTimestampFromNow({monthsAgo: 11})
         }
       ),
-      mockNote("# Pizza Night\n\nMade pizza from scratch. Perfect dough!", "Pizza Success", "note-004",
+      mockNote("Pizza Success", "# Pizza Night\n\nMade pizza from scratch. Perfect dough!", "note-004",
         {
           images: [{url: "https://example.com/pizza.jpg"}],
           tags: ["food", "cooking"], updated: noteTimestampFromNow({monthsAgo: 2})
         }
       ),
-      mockNote("# NY Restaurants\n\nBest places:\n- Joe's Pizza\n- Katz's Deli\n- Shake Shack",
-        "NY Food Guide", "note-005",
+      mockNote("NY Food Guide", "# NY Restaurants\n\nBest places:\n- Joe's Pizza\n- Katz's Deli\n- Shake Shack",
+        "note-005",
         {tags: ["food", "guide", "nyc"], updated: noteTimestampFromNow({monthsAgo: 3})}
       ),
-      mockNote("# European Trip\n\nParis and Rome. Stunning architecture!", "Europe 2024", "note-006",
+      mockNote("Europe 2024", "# European Trip\n\nParis and Rome. Stunning architecture!", "note-006",
         {
           images: [{url: "https://example.com/eiffel.jpg"}, {url: "https://example.com/colosseum.jpg"}],
           tags: ["travel", "europe"], updated: noteTimestampFromNow({monthsAgo: 4})
         }
       ),
-      mockNote("# Ideas\n\nTry:\n- BLT\n- Club\n- Reuben", "Sandwich Wishlist", "note-007",
+      mockNote("Sandwich Wishlist", "# Ideas\n\nTry:\n- BLT\n- Club\n- Reuben", "note-007",
         {tags: ["food", "todo"], updated: noteTimestampFromNow({monthsAgo: 5})}
       ),
-      mockNote("# BBQ Party\n\nGrilled steaks and ribs. Great BBQ sauce!", "Weekend BBQ", "note-008",
+      mockNote("Weekend BBQ", "# BBQ Party\n\nGrilled steaks and ribs. Great BBQ sauce!", "note-008",
         {
           images: [{url: "https://example.com/bbq.jpg"}],
           tags: ["food", "bbq", "party"], updated: noteTimestampFromNow({monthsAgo: 6})
         }
       ),
-      mockNote("# Meeting Notes\n\nQ4 goals and timeline. Follow up on budget.", "Q4 Planning",
+      mockNote("Q4 Planning", "# Meeting Notes\n\nQ4 goals and timeline. Follow up on budget.",
         "note-009", {tags: ["work", "meetings"], updated: noteTimestampFromNow({monthsAgo: 7})}
       ),
-      mockNote("# NYC Architecture\n\nIncredible buildings. Love Art Deco!", "Architecture Notes",
+      mockNote("Architecture Notes", "# NYC Architecture\n\nIncredible buildings. Love Art Deco!",
         "note-010", {
           images: [{url: "https://example.com/building.jpg"}],
           tags: ["architecture", "nyc"], updated: noteTimestampFromNow({monthsAgo: 10})
@@ -114,10 +114,10 @@ describe("Search Agent", () => {
   // --------------------------------------------------------------------------------------
   it("should filter candidates by tag requirement", async () => {
     const notes = [
-      mockNote("# Food Recipes\n\nMy collection of cooking recipes and meal ideas.", "Recipes from Mother",
+      mockNote("Recipes from Mother", "# Food Recipes\n\nMy collection of cooking recipes and meal ideas.",
         "note-tag-001", {tags: ["food", "recipes"]}
       ),
-      mockNote("# Plain Note\n\nTalks about food and cooking but has no tags.", "Plain Jane the main dame",
+      mockNote("Plain Jane the main dame", "# Plain Note\n\nTalks about food and cooking but has no tags.",
         "note-tag-002", {tags: []}
       )
     ];
@@ -139,7 +139,7 @@ describe("Search Agent", () => {
   // --------------------------------------------------------------------------------------
   it("should find notes pertaining to finance & retirement", async () => {
     const notes = [
-      mockNote("# My Vacation\n\nBeach trip. Amazing sunset!", "Beach Trip 2024", "note-001", {
+      mockNote("Beach Trip 2024", "# My Vacation\n\nBeach trip. Amazing sunset!", "note-001", {
         images: [{url: "https://example.com/beach.jpg"}],
         tags: ["vacation", "photos"], updated: noteTimestampFromNow({daysAgo: 7})
       }),

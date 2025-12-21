@@ -84,7 +84,7 @@ export function mockPlugin() {
 
 // --------------------------------------------------------------------------------------
 export function mockAppWithContent(content) {
-  const note = mockNote(content, "Baby's first plugin", "abc123");
+  const note = mockNote("Baby's first plugin", content, "abc123");
   const app = mockApp(note);
   return { app, note };
 }
@@ -113,7 +113,7 @@ export function mockApp(notes, { plugin = null } = {}) {
   });
 
   app.createNote = jest.fn().mockImplementation(async (name, tags = []) => {
-    const newNote = mockNote("", name, `note-created-${ Date.now() }`, { tags });
+    const newNote = mockNote(name, "", `note-created-${ Date.now() }`, { tags });
     allNotes.push(newNote);
     return newNote;
   });
@@ -211,7 +211,7 @@ export function mockApp(notes, { plugin = null } = {}) {
 }
 
 // --------------------------------------------------------------------------------------
-export function mockNote(content, name, uuid, options = {}) {
+export function mockNote(name, content, uuid, options = {}) {
   const note = {};
   note.body = content;
   note.name = name;
