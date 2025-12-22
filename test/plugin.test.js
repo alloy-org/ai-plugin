@@ -3,7 +3,7 @@ import { APP_OPTION_VALUE_USE_PROMPT, QUESTION_ANSWER_PROMPT } from "constants/p
 import { PROVIDER_DEFAULT_MODEL_IN_TEST } from "constants/provider"
 import { AI_MODEL_LABEL, SUGGEST_TASKS_LABEL } from "constants/settings"
 import { ollamaAvailableModels } from "providers/fetch-ollama"
-import { defaultProviderModel, openAiTokenLimit } from "providers/ai-provider-settings"
+import { defaultProviderModel, modelTokenLimit } from "providers/ai-provider-settings"
 import {
   contentFromFileName,
   defaultTestModel,
@@ -185,7 +185,7 @@ describe("This here plugin", () => {
     const wordsLength = words.length;
     let content = "";
     const aiModel = defaultTestModel("openai");
-    const limit = openAiTokenLimit(aiModel);
+    const limit = modelTokenLimit(aiModel);
     for (let i = 0; i < limit; i++) {
       content += words[Math.floor(Math.random() * wordsLength)] + " ";
     }

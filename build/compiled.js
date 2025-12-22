@@ -442,7 +442,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
   var IS_TEST_ENVIRONMENT = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
   var MAX_SPACES_ABORT_RESPONSE = 30;
-  var SEARCH_USING_AGENT_LABEL = "Search notes with AI";
+  var SEARCH_USING_AGENT_LABEL = "AI Search Agent";
   var SUGGEST_TASKS_LABEL = "Suggest tasks";
   var PLUGIN_NAME = "AmpleAI";
   var PROVIDER_SETTING_KEY_LABELS = {
@@ -2702,7 +2702,7 @@ Or if not confident:
           let results = await searchAgent.app.searchNotes(query);
           if (!results.length)
             return [];
-          results = await filterNotesWithBody(queryCombo, results, searchAgent.searchAttempt);
+          results = await filterNotesWithBody(queryCombo, results);
           const limited = maxResultsPerQuery ? results.slice(0, maxResultsPerQuery) : results;
           if (results.length)
             notesFound = notesFound.concat(results);
@@ -2721,13 +2721,11 @@ Or if not confident:
   }
   async function filterNotesWithBody(queryArray, resultNotes) {
     const eligibleNotes = await resultNotes.filter(async (note) => {
-      let body;
       return queryArray.every(async (keyword) => {
         const pattern = new RegExp(`(?:^|\\b|\\s)${keyword}`);
         if (pattern.test(note.name, "i"))
           return true;
-        body = body ? body : (await note.content()).slice(0, MAX_CHARACTERS_TO_SEARCH_BODY);
-        return pattern.test(body);
+        return pattern.test(note.bodyContent);
       });
     });
     console.log(`Enforcing presence of ${queryArray} keywords yields ${eligibleNotes.length} eligible notes from ${resultNotes.length} input notes`);

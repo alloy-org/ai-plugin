@@ -1,5 +1,6 @@
 import { phase5_sanityCheck } from "functions/search/candidate-evaluation.js"
 import { MIN_KEEP_RESULT_SCORE } from "constants/search-settings.js"
+import SearchCandidateNote from "functions/search/search-candidate-note.js"
 
 describe("Candidate evaluation (phase5 pruning)", () => {
   const baseCriteria = { resultCount: 10 };
@@ -7,20 +8,39 @@ describe("Candidate evaluation (phase5 pruning)", () => {
   function stubSearchAgent() {
     return {
       emitProgress: () => {},
-      handleNoResults: () => ({ found: false }),
       formatResult: (_found, notes) => ({ notes }),
+      handleNoResults: () => ({ found: false }),
       llm: async () => ({ confident: true }),
-      retryCount: 0,
       maxRetries: 0,
+      retryCount: 0,
     };
+  }
+
+  // --------------------------------------------------------------------------
+  // Create a SearchCandidateNote with evaluation results populated
+  function createRankedCandidate(uuid, name, finalScore, reasoning) {
+    const candidate = new SearchCandidateNote(
+      uuid,
+      name,
+      [],       // tags
+      "2024-01-01T00:00:00Z",  // created
+      "2024-01-01T00:00:00Z",  // updated
+      "",       // bodyContent
+      0,        // originalContentLength
+      1         // matchCount
+    );
+    candidate.checks = {};
+    candidate.finalScore = finalScore;
+    candidate.scoreBreakdown = { reasoning };
+    return candidate;
   }
 
   it("prunes notes with score < MIN_KEEP_RESULT_SCORE or reasoning containing 'poor match' when at least one good note remains", async () => {
     const searchAgent = stubSearchAgent();
     const rankedNotes = [
-      { note: { uuid: "good-1", name: "Good" }, finalScore: 7, scoreBreakdown: { reasoning: "Strong match" }, checks: {} },
-      { note: { uuid: "bad-1", name: "Bad score" }, finalScore: MIN_KEEP_RESULT_SCORE - 0.1, scoreBreakdown: { reasoning: "Decent" }, checks: {} },
-      { note: { uuid: "bad-2", name: "Bad wording" }, finalScore: 8, scoreBreakdown: { reasoning: "Poor match for the request" }, checks: {} },
+      createRankedCandidate("good-1", "Good", 7, "Strong match"),
+      createRankedCandidate("bad-1", "Bad score", MIN_KEEP_RESULT_SCORE - 0.1, "Decent"),
+      createRankedCandidate("bad-2", "Bad wording", 8, "Poor match for the request"),
     ];
 
     const result = await phase5_sanityCheck(searchAgent, rankedNotes, baseCriteria, "query");
@@ -30,8 +50,8 @@ describe("Candidate evaluation (phase5 pruning)", () => {
   it("does not prune if it would remove every note", async () => {
     const searchAgent = stubSearchAgent();
     const rankedNotes = [
-      { note: { uuid: "only-1", name: "Only" }, finalScore: MIN_KEEP_RESULT_SCORE - 0.2, scoreBreakdown: { reasoning: "Not great" }, checks: {} },
-      { note: { uuid: "only-2", name: "Only2" }, finalScore: MIN_KEEP_RESULT_SCORE - 0.8, scoreBreakdown: { reasoning: "poor match" }, checks: {} },
+      createRankedCandidate("only-1", "Only", MIN_KEEP_RESULT_SCORE - 0.2, "Not great"),
+      createRankedCandidate("only-2", "Only2", MIN_KEEP_RESULT_SCORE - 0.8, "poor match"),
     ];
 
     const result = await phase5_sanityCheck(searchAgent, rankedNotes, baseCriteria, "query");
