@@ -174,15 +174,15 @@ describe("Search Agent", () => {
       const searchAgent = new SearchAgent(app, plugin);
       const userQuery = "Return all the notes that discuss retirement projections and related content, like net worth calculations";
       const result = await searchAgent.search(userQuery);
-      const expectedNames = [ "Working Toward Retirement Projections",
-        "Escaping the rat race: A bangin plan",
+      const expectedNames = [ "Escaping the rat race: A bangin plan",
+        "Working Toward Retirement Projections",
         "gpt-5.1 result: Net Worth & Retirement Estimates",
       ];
 
       expect(result.summaryNote).toBeDefined();
       expect(result.found).toBe(true);
       expect(result.notes).toBeDefined();
-      expect(expectedNames).toBe(result.notes.map(n => n.name).sort());
+      expect(expectedNames.sort()).toStrictEqual(result.notes.map(n => n.name).sort());
     }, AWAIT_TIME * DEBUG_MULTIPLIER);
   });
 });
