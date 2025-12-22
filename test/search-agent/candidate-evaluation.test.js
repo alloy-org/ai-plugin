@@ -1,6 +1,7 @@
 import { phase5_sanityCheck } from "functions/search/candidate-evaluation.js"
 import { MIN_KEEP_RESULT_SCORE } from "constants/search-settings.js"
 import SearchCandidateNote from "functions/search/search-candidate-note.js"
+import { noteTimestampFromNow } from "../test-helpers.js"
 
 describe("Candidate evaluation (phase5 pruning)", () => {
   const baseCriteria = { resultCount: 10 };
@@ -19,23 +20,15 @@ describe("Candidate evaluation (phase5 pruning)", () => {
   // --------------------------------------------------------------------------
   // Create a SearchCandidateNote with evaluation results populated
   function createRankedCandidate(uuid, name, finalScore, reasoning) {
-    const candidate = new SearchCandidateNote(
-      uuid,
-      name,
-      [],       // tags
-      "2024-01-01T00:00:00Z",  // created
-      "2024-01-01T00:00:00Z",  // updated
-      "",       // bodyContent
-      0,        // originalContentLength
-      1         // matchCount
-    );
+    const timestamp = noteTimestampFromNow({ daysAgo: 1 });
+    const candidate = new SearchCandidateNote(uuid, name, [], timestamp, timestamp, "", 0, 1);
     candidate.checks = {};
     candidate.finalScore = finalScore;
     candidate.scoreBreakdown = { reasoning };
     return candidate;
   }
 
-  it("prunes notes with score < MIN_KEEP_RESULT_SCORE or reasoning containing 'poor match' when at least one good note remains", async () => {
+  it("prunes notes with score < MIN_KEEP_RESULT_SCORE or 'poor match' reasoning when good notes remain", async () => {
     const searchAgent = stubSearchAgent();
     const rankedNotes = [
       createRankedCandidate("good-1", "Good", 7, "Strong match"),
