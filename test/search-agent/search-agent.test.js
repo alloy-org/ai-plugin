@@ -127,9 +127,9 @@ describe("Search Agent", () => {
     app.settings[AI_MODEL_LABEL] = defaultTestModel("anthropic");
 
     const searchAgent = new SearchAgent(app, plugin);
-    const result = await searchAgent.search("Find food notes", {
-      tagRequirement: {mustHave: "food", preferred: null}
-    });
+    const result = await searchAgent.search("Find food notes", { options: {
+      tagRequirement: { mustHave: "food", preferred: null }
+    }});
 
     expect(result.found).toBe(true);
     const bestResultNote = result.notes[0];
