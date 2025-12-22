@@ -417,6 +417,19 @@ Your API key should start with "pplx-". Get your key here:
 ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   };
 
+  // lib/constants/search-settings.js
+  var ATTEMPT_FIRST_PASS = "first_pass";
+  var ATTEMPT_KEYWORD_PAIRS = "keyword_pairs";
+  var ATTEMPT_INDIVIDUAL = "individual";
+  var DEFAULT_SEARCH_NOTES_RETURNED = 10;
+  var MAX_CHARACTERS_TO_SEARCH_BODY = 4e3;
+  var MAX_PARALLEL_SEARCHES = 10;
+  var MAX_RESULTS_RETURNED = 30;
+  var MAX_SECONDARY_KEYWORDS_TO_QUERY = 15;
+  var MIN_FILTER_NOTES_RESULTS = 10;
+  var MIN_KEEP_RESULT_SCORE = 5;
+  var MIN_TARGET_RESULTS = 10;
+
   // lib/constants/settings.js
   function settingKeyLabel(providerEm) {
     return PROVIDER_SETTING_KEY_LABELS[providerEm];
@@ -1232,7 +1245,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   } = {}) {
     const providerEm = providerFromModel(model);
     if (attemptNumber > 0)
-      console.debug(`Attempt ${attemptNumber + 1}: Trying ${model} with ${promptKey || "no promptKey"}`);
+      console.debug(`Attempt #${attemptNumber}: Trying ${model} with ${promptKey || "no promptKey"}`);
     const apiKey = apiKeyFromApp(app, providerEm);
     const body = requestBodyForProvider(messages, model, stream, tools, { promptKey });
     const endpoint = providerEndpointUrl(model, apiKey);
@@ -2179,18 +2192,345 @@ Will be utilized after your preliminary approval`,
     });
   }
 
-  // lib/constants/search-settings.js
-  var ATTEMPT_FIRST_PASS = "first_pass";
-  var ATTEMPT_KEYWORD_PAIRS = "keyword_pairs";
-  var ATTEMPT_INDIVIDUAL = "individual";
-  var MAX_PARALLEL_SEARCHES = 10;
-  var MAX_RESULTS_RETURNED = 30;
-  var MAX_SECONDARY_KEYWORDS_TO_QUERY = 15;
-  var MIN_FILTER_NOTES_RESULTS = 10;
-  var MIN_KEEP_RESULT_SCORE = 5;
-  var MIN_TARGET_RESULTS = 10;
+  // lib/functions/search/candidate-evaluation.js
+  var LLM_SCORE_BODY_CONTENT_LENGTH = 3e3;
+  var MIN_ACCEPT_SCORE = 8;
+  var RANK_MATCH_COUNT_CAP = 10;
+  var RANK_MATCH_COUNT_WEIGHT = 1.5;
+  var RANK_PRIMARY_KEYWORD_WEIGHT = 10;
+  var RANK_RECENCY_BASE_SCORE = 5;
+  var RANK_RECENCY_DECAY_DAYS = 30;
+  var RANK_SECONDARY_KEYWORD_WEIGHT = 3;
+  var RANK_SECONDARY_KEYWORDS_TO_CHECK = 3;
+  var RANK_TAG_BOOST_WEIGHT = 5;
+  async function phase3_deepAnalysis(searchAgent, candidates, criteria) {
+    searchAgent.emitProgress("Phase 3: Analyzing top candidates...");
+    const preliminaryRanked = rankPreliminary(candidates, criteria);
+    const topN = Math.min(8, preliminaryRanked.length);
+    const topCandidates = preliminaryRanked.slice(0, topN);
+    console.log(`Deep analyzing top ${topN} of ${candidates.length} candidates`);
+    const deepAnalysis = await searchAgent.parallelLimit(
+      topCandidates.map((note) => () => analyzeNoteDeep(note, searchAgent, criteria)),
+      5
+      // Max 5 concurrent API calls
+    );
+    const validCandidates = deepAnalysis.filter((note) => {
+      const { checks } = note;
+      if (criteria.booleanRequirements.containsPDF && !checks.hasPDF)
+        return false;
+      if (criteria.booleanRequirements.containsImage && !checks.hasImage)
+        return false;
+      if (criteria.exactPhrase && !checks.hasExactPhrase)
+        return false;
+      if (criteria.booleanRequirements.containsURL && !checks.hasURL)
+        return false;
+      return true;
+    });
+    console.log(`${validCandidates.length} candidates passed criteria checks`);
+    searchAgent.emitProgress(`${validCandidates.length} notes match all criteria`);
+    return { validCandidates, allAnalyzed: deepAnalysis };
+  }
+  async function phase4_scoreAndRank(searchAgent, analyzedCandidates, criteria, userQuery) {
+    searchAgent.emitProgress(`Phase 4: Ranking ${pluralize(analyzedCandidates.length, "result")}...`);
+    const now = /* @__PURE__ */ new Date();
+    const scoringPrompt = `
+You are scoring note search results. Original query: "${userQuery}"
 
-  // lib/functions/search/candidate-collection.js
+Extracted criteria:
+${JSON.stringify(criteria, null, 2)}
+
+Score each candidate note 0-10 on these dimensions:
+1. TITLE_RELEVANCE: How well does the note title match the search intent?
+2. KEYWORD_DENSITY: How concentrated are the keywords in the content?
+3. CRITERIA_MATCH: Does it meet all the hard requirements (PDF/image/URL/exact phrase)?
+4. TAG_ALIGNMENT: Does it have relevant or preferred tags?
+5. RECENCY: If the user specified recency requirement, does it meet that? If no user-specified requirement, score 10 for recency within a month of today (${now.toDateString()}), and scale down to 0 for candidates from 12+ months earlier.
+
+Candidates to score:
+${analyzedCandidates.map((candidate, index) => `
+${index}. "${candidate.name}"
+   UUID: ${candidate.uuid}
+   Tags: ${candidate.tags?.join(", ") || "none"}
+   Updated: ${candidate.updated}
+   Checks: ${JSON.stringify(candidate.checks)}
+   Body Content (ending with $END$): ${candidate.bodyContent.slice(0, LLM_SCORE_BODY_CONTENT_LENGTH)}
+$END$
+`).join("\n\n")}
+
+Return ONLY valid JSON array:
+[
+  {
+    "noteIndex": 0,
+    "titleRelevance": 8,
+    "keywordDensity": 7,
+    "criteriaMatch": 10,
+    "tagAlignment": 6,
+    "recency": 5,
+    "reasoning": "Brief explanation of why this note matches"
+  }
+]
+`;
+    const scores = await searchAgent.llm(scoringPrompt, { jsonResponse: true });
+    console.log("Received scores from LLM:", scores);
+    const scoresArray = Array.isArray(scores) ? scores : [scores];
+    const weights = {
+      titleRelevance: 0.28,
+      keywordDensity: 0.23,
+      criteriaMatch: 0.2,
+      tagAlignment: 0.14,
+      recency: 0.1
+    };
+    const rankedNotes = scoresArray.map((score) => {
+      const weightedLlmScore = Object.entries(weights).reduce((sum, [key, weight]) => {
+        const rawValue = score[key];
+        const value = Number(rawValue === void 0 || rawValue === null ? 0 : rawValue);
+        return sum + value * weight;
+      }, 0);
+      const note = analyzedCandidates[score.noteIndex];
+      if (note) {
+        const matchCountSignal = Math.min(RANK_MATCH_COUNT_CAP, note.matchCount || 0) * 0.05;
+        const finalScore = weightedLlmScore + matchCountSignal;
+        note.finalScore = Math.round(finalScore * 10) / 10;
+        note.scoreBreakdown = score;
+        note.reasoning = score.reasoning;
+      }
+      return note;
+    }).filter((n) => n);
+    const sortedNotes = rankedNotes.sort((a, b) => b.finalScore - a.finalScore);
+    console.log(`[Phase 4] Finished with ${sortedNotes.length} sorted notes, headlined by "${sortedNotes[0]?.name}"`);
+    return sortedNotes;
+  }
+  async function phase5_sanityCheck(searchAgent, rankedNotes, criteria, userQuery) {
+    searchAgent.emitProgress(`Phase 5: Verifying ${pluralize(rankedNotes.length, "result")}...`);
+    if (rankedNotes.length === 0) {
+      return searchAgent.handleNoResults(criteria);
+    }
+    const pruneResult = rankedNotesAfterRemovingPoorMatches(rankedNotes);
+    if (pruneResult.removedCount) {
+      console.log(`Pruned ${pruneResult.removedCount} low-quality results (score < ${MIN_KEEP_RESULT_SCORE} or "poor match"), leaving ${pruneResult.rankedNotes.length} notes:`, pruneResult.rankedNotes);
+    } else {
+      console.log(`No results pruned among ${rankedNotes.length} candidates:`, rankedNotes);
+    }
+    rankedNotes = pruneResult.rankedNotes;
+    const topResult = rankedNotes[0];
+    if (topResult.finalScore >= MIN_ACCEPT_SCORE) {
+      searchAgent.emitProgress(`Found ${topResult.finalScore}/10 match, returning up to ${pluralize(criteria.resultCount, "result")} (type ${typeof criteria.resultCount})`);
+      return searchAgent.formatResult(true, rankedNotes, criteria.resultCount);
+    }
+    const sanityPrompt = `
+Original query: "${userQuery}"
+
+Top recommended note:
+- Title: "${topResult.name}"
+- Score: ${topResult.finalScore}/10
+- Tags: ${topResult.tags.join(", ") || "none"}
+- Reasoning: ${topResult.scoreBreakdown.reasoning}
+
+Does this genuinely seem like what the user is looking for?
+
+Consider:
+1. Does the title make sense given the query?
+2. Is the score reasonable (>6.0 suggests good match)?
+3. Are there obvious mismatches?
+
+Return ONLY valid JSON:
+{
+  "confident": true,
+  "concerns": null,
+  "suggestAction": "accept"
+}
+
+Or if not confident:
+{
+  "confident": false,
+  "concerns": "Explanation of concern",
+  "suggestAction": "retry_broader" | "retry_narrower" | "insufficient_data"
+}
+`;
+    const sanityCheck = await searchAgent.llm(sanityPrompt, { jsonResponse: true });
+    if (sanityCheck.confident || searchAgent.retryCount >= searchAgent.maxRetries) {
+      searchAgent.emitProgress(`Search completed with ${pluralize(criteria.resultCount, "final result")}`);
+      return searchAgent.formatResult(true, rankedNotes, criteria.resultCount);
+    }
+    console.log(`Sanity check failed: ${sanityCheck.concerns}`);
+    searchAgent.retryCount++;
+    if (sanityCheck.suggestAction === "retry_broader") {
+      return searchAgent.nextSearchAttempt(userQuery, criteria);
+    }
+    return searchAgent.formatResult(false, rankedNotes, criteria.resultCount);
+  }
+  async function analyzeNoteDeep(note, searchAgent, searchParams) {
+    const checks = {};
+    let content = null;
+    const needAttachments = searchParams.booleanRequirements.containsPDF;
+    const needImages = searchParams.booleanRequirements.containsImage;
+    const fetches = [];
+    if (needAttachments) {
+      fetches.push(
+        searchAgent.app.notes.find(note.uuid).then((n) => n.attachments()).then((attachments) => {
+          checks.hasPDF = attachments.some(
+            (a) => a.type === "application/pdf" || a.name.endsWith(".pdf")
+          );
+          checks.attachmentCount = attachments.length;
+        })
+      );
+    }
+    if (needImages) {
+      fetches.push(
+        searchAgent.app.notes.find(note.uuid).then((n) => n.images()).then((images) => {
+          checks.hasImage = images.length > 0;
+          checks.imageCount = images.length;
+        })
+      );
+    }
+    fetches.push(
+      searchAgent.app.notes.find(note.uuid).then((n) => n.content()).then((noteContent) => {
+        content = noteContent;
+        if (searchParams.exactPhrase) {
+          checks.hasExactPhrase = noteContent.includes(searchParams.exactPhrase);
+        }
+        if (searchParams.criteria.containsURL) {
+          checks.hasURL = /https?:\/\/[^\s]+/.test(noteContent);
+          const urls = noteContent.match(/https?:\/\/[^\s]+/g);
+          checks.urlCount = urls ? urls.length : 0;
+        }
+      })
+    );
+    await Promise.all(fetches);
+    console.log(`Deep analysis finds note "${note.name}" needAttachments: ${needAttachments} == ${checks.hasPDF}, needImages: ${needImages} == ${checks.hasImage}`);
+    note.checks = checks;
+    return note;
+  }
+  function rankPreliminary(noteCandidates, searchParams) {
+    const msPerDay = 1e3 * 60 * 60 * 24;
+    const noteScores = noteCandidates.map((note) => {
+      let score = 0;
+      const titleLower = (note.name || "").toLowerCase();
+      searchParams.primaryKeywords.forEach((kw) => {
+        if (titleLower.includes(kw.toLowerCase())) {
+          score += RANK_PRIMARY_KEYWORD_WEIGHT;
+        }
+      });
+      searchParams.secondaryKeywords.slice(0, RANK_SECONDARY_KEYWORDS_TO_CHECK).forEach((kw) => {
+        if (titleLower.includes(kw.toLowerCase())) {
+          score += RANK_SECONDARY_KEYWORD_WEIGHT;
+        }
+      });
+      score += Math.min(RANK_MATCH_COUNT_CAP, note.matchCount || 0) * RANK_MATCH_COUNT_WEIGHT;
+      score += (note.tagBoost || 1) * RANK_TAG_BOOST_WEIGHT;
+      if (searchParams.dateFilter) {
+        const daysSinceUpdate = (Date.now() - new Date(note.updated)) / msPerDay;
+        score += Math.max(0, RANK_RECENCY_BASE_SCORE - daysSinceUpdate / RANK_RECENCY_DECAY_DAYS);
+      }
+      return { note, preliminaryScore: score };
+    });
+    const sortedByScore = noteScores.sort((a, b) => b.preliminaryScore - a.preliminaryScore);
+    return sortedByScore.map((item) => item.note);
+  }
+  function rankedNotesAfterRemovingPoorMatches(rankedNotes) {
+    const poorMatchRegex = /poor match/i;
+    const filteredRankedNotes = rankedNotes.filter((r) => {
+      const reasoning = r.scoreBreakdown && r.scoreBreakdown.reasoning ? r.scoreBreakdown.reasoning : "";
+      const hasPoorMatchLanguage = poorMatchRegex.test(reasoning);
+      return r.finalScore >= MIN_KEEP_RESULT_SCORE && !hasPoorMatchLanguage;
+    });
+    if (filteredRankedNotes.length && filteredRankedNotes.length < rankedNotes.length) {
+      return { rankedNotes: filteredRankedNotes, removedCount: rankedNotes.length - filteredRankedNotes.length };
+    }
+    return { rankedNotes, removedCount: 0 };
+  }
+
+  // lib/functions/search/search-candidate-note.js
+  var SearchCandidateNote = class {
+    // Private field for UUID to ensure url stays in sync
+    #uuid;
+    // --------------------------------------------------------------------------
+    // @param {string} uuid - Note UUID
+    // @param {string} name - Note title
+    // @param {Array<string>} tags - Note tags
+    // @param {string} created - ISO timestamp of note creation
+    // @param {string} updated - ISO timestamp of last note update
+    // @param {string} bodyContent - Truncated note content (up to MAX_CHARACTERS_TO_SEARCH_BODY)
+    // @param {number} originalContentLength - Original length of full note content before truncation
+    // @param {number} matchCount - Number of search query permutations that matched this note
+    constructor(uuid, name, tags, created, updated, bodyContent, originalContentLength, matchCount = 1) {
+      this.#uuid = uuid;
+      this.name = name;
+      this.tags = tags || [];
+      this.created = created;
+      this.updated = updated;
+      this.bodyContent = bodyContent;
+      this.originalContentLength = originalContentLength;
+      this.matchCount = matchCount;
+      this.tagBoost = 1;
+      this.checks = {};
+      this.finalScore = 0;
+      this.rank = 0;
+      this.reasoning = null;
+      this.scoreBreakdown = {};
+    }
+    // --------------------------------------------------------------------------
+    // UUID getter - returns the note's UUID
+    get uuid() {
+      return this.#uuid;
+    }
+    // --------------------------------------------------------------------------
+    // URL getter - derives the Amplenote URL from the UUID
+    // URL is always in sync with UUID since it's computed on access
+    get url() {
+      return `https://www.amplenote.com/notes/${this.#uuid}`;
+    }
+    // --------------------------------------------------------------------------
+    // Factory method to create a new instance by fetching note content from a noteHandle
+    //
+    // @param {Object} noteHandle - Note handle object from Amplenote Plugin API (app.filterNotes, app.searchNotes, app.notes.find, etc.)
+    //   Expected properties:
+    //   - uuid {string} - Note UUID
+    //   - name {string} - Note title
+    //   - tags {Array<string>} - Array of tag names applied to the note
+    //   - created {string} - ISO timestamp of note creation
+    //   - updated {string} - ISO timestamp of last note update
+    //   Expected methods:
+    //   - content() {Promise<string>} - Async method returning the note's markdown content
+    // @param {number} matchCount - Initial match count (default 1)
+    // @returns {Promise<SearchCandidateNote>} New instance with fetched and truncated content
+    static async create(noteHandle, matchCount = 1) {
+      let fullContent = "";
+      try {
+        if (typeof noteHandle.content === "function") {
+          fullContent = await noteHandle.content();
+        } else {
+          console.warn(`Note ${noteHandle.uuid} (${noteHandle.name}) handle has no content() method`);
+        }
+      } catch (error) {
+        console.error(`Failed to fetch content for note ${noteHandle.uuid}: ${error.message}`);
+      }
+      const originalContentLength = fullContent ? fullContent.length : 0;
+      const truncatedContent = fullContent ? fullContent.slice(0, MAX_CHARACTERS_TO_SEARCH_BODY) : "";
+      return new SearchCandidateNote(
+        noteHandle.uuid,
+        noteHandle.name,
+        noteHandle.tags,
+        noteHandle.created,
+        noteHandle.updated,
+        truncatedContent,
+        originalContentLength,
+        matchCount
+      );
+    }
+    // --------------------------------------------------------------------------
+    // Increment the match count for this candidate
+    incrementMatchCount(amount = 1) {
+      this.matchCount += amount;
+    }
+    // --------------------------------------------------------------------------
+    // Set the tag boost multiplier
+    setTagBoost(boost) {
+      this.tagBoost = boost;
+    }
+  };
+
+  // lib/functions/search/phase2-candidate-collection.js
   async function phase2_collectCandidates(searchAgent, criteria) {
     searchAgent.emitProgress("Phase 2: Filtering candidates...");
     const { dateFilter, primaryKeywords, resultCount, secondaryKeywords, tagRequirement } = criteria;
@@ -2205,8 +2545,7 @@ Will be utilized after your preliminary approval`,
       console.log(`After date filter: ${candidates.length} candidates`);
     }
     if (candidates.length > 0) {
-      const tagFrequency = analyzeTagFrequency(candidates);
-      candidates = candidates.map((note) => {
+      candidates.forEach((note) => {
         let tagBoost = 1;
         if (tagRequirement.preferred && note.tags) {
           const hasPreferredTag = note.tags.some(
@@ -2215,20 +2554,11 @@ Will be utilized after your preliminary approval`,
           if (hasPreferredTag)
             tagBoost = 1.5;
         }
-        return { ...note, _tagBoost: tagBoost };
+        note.setTagBoost(tagBoost);
       });
     }
     searchAgent.emitProgress(`Found ${candidates.length} candidate notes`);
     return candidates;
-  }
-  function analyzeTagFrequency(candidates) {
-    const frequency = {};
-    candidates.forEach((note) => {
-      (note.tags || []).forEach((tag) => {
-        frequency[tag] = (frequency[tag] || 0) + 1;
-      });
-    });
-    return frequency;
   }
   async function searchNotesByStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement) {
     if (primaryKeywords.length === 0)
@@ -2257,7 +2587,7 @@ Will be utilized after your preliminary approval`,
       console.log(`[${strategyName}] Too few candidates (${candidatesByUuid.size}) below minimum (${minFilterNotesResults}), supplementing with app.searchNotes`);
       await addMatchesFromSearchNotes(searchAgent, candidatesByUuid, primaryQueries, maxResultsPerQuery);
       if (candidatesByUuid.size < minFilterNotesResults && secondaryQueries.length) {
-        console.log(`[${strategyName}] additionally searching ${secondaryQueries.length} with app.searchNotes since we only located ${candidatesByUuid.size} candidates so far`);
+        console.log(`[${strategyName}] Searching ${secondaryQueries.length} secondary queries with app.searchNotes since we only located ${candidatesByUuid.size} candidates so far`);
         await addMatchesFromSearchNotes(searchAgent, candidatesByUuid, secondaryQueries, maxResultsPerQuery);
       }
     } else {
@@ -2327,15 +2657,16 @@ Will be utilized after your preliminary approval`,
     }
     return unique;
   }
-  function upsertCandidateWithIncrement(candidatesByUuid, note, increment = 1) {
-    if (!note?.uuid)
+  async function upsertCandidate(candidatesByUuid, noteHandle, increment = 1) {
+    if (!noteHandle?.uuid)
       return;
-    const existing = candidatesByUuid.get(note.uuid);
+    const existing = candidatesByUuid.get(noteHandle.uuid);
     if (existing) {
-      existing.matchCount = (existing.matchCount || 0) + increment;
+      existing.incrementMatchCount(increment);
       return;
     }
-    candidatesByUuid.set(note.uuid, { ...note, matchCount: increment });
+    const candidate = await SearchCandidateNote.create(noteHandle, increment);
+    candidatesByUuid.set(noteHandle.uuid, candidate);
   }
   async function addMatchesFromFilterNotes(searchAgent, candidatesByUuid, queries, tagRequirement, maxResultsPerQuery) {
     let notesFound = [];
@@ -2344,10 +2675,7 @@ Will be utilized after your preliminary approval`,
       const batchResults = await Promise.all(
         batch.map(async (queryCombo) => {
           const query = queryStringFromCombination(queryCombo);
-          const results = await searchAgent.app.filterNotes({
-            query,
-            tag: tagRequirement?.mustHave || void 0
-          });
+          const results = await searchAgent.app.filterNotes({ query, tag: tagRequirement?.mustHave || null });
           if (results.length)
             notesFound = notesFound.concat(results);
           const limited = maxResultsPerQuery ? results.slice(0, maxResultsPerQuery) : results;
@@ -2355,14 +2683,14 @@ Will be utilized after your preliminary approval`,
         })
       );
       for (const perQueryNotes of batchResults) {
-        for (const note of perQueryNotes) {
-          upsertCandidateWithIncrement(candidatesByUuid, note, 1);
+        for (const noteHandle of perQueryNotes) {
+          await upsertCandidate(candidatesByUuid, noteHandle, 1);
         }
       }
     }
     const foundNoteNames = notesFound.map((n) => n.name);
     const uniqueNotes = foundNoteNames.filter((n, i) => foundNoteNames.indexOf(n) === i);
-    console.log(`[filterNotes] Adding matches (up to ${maxResultsPerQuery || "however many"} results) from via queries`, queries.map((q) => q.join(" ")), `to ${uniqueNotes.length} note(s)`, uniqueNotes);
+    console.log(`[filterNotes] Adding (up to ${maxResultsPerQuery || "however many"} results) from queries`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes);
   }
   async function addMatchesFromSearchNotes(searchAgent, candidatesByUuid, queries, maxResultsPerQuery) {
     let notesFound = [];
@@ -2371,7 +2699,10 @@ Will be utilized after your preliminary approval`,
       const batchResults = await Promise.all(
         batch.map(async (queryCombo) => {
           const query = queryStringFromCombination(queryCombo);
-          const results = await searchAgent.app.searchNotes(query);
+          let results = await searchAgent.app.searchNotes(query);
+          if (!results.length)
+            return [];
+          results = await filterNotesWithBody(queryCombo, results, searchAgent.searchAttempt);
           const limited = maxResultsPerQuery ? results.slice(0, maxResultsPerQuery) : results;
           if (results.length)
             notesFound = notesFound.concat(results);
@@ -2379,261 +2710,28 @@ Will be utilized after your preliminary approval`,
         })
       );
       for (const perQueryNotes of batchResults) {
-        for (const note of perQueryNotes) {
-          upsertCandidateWithIncrement(candidatesByUuid, note, 1);
+        for (const noteHandle of perQueryNotes) {
+          await upsertCandidate(candidatesByUuid, noteHandle, 1);
         }
       }
     }
     const foundNoteNames = notesFound.map((n) => n.name);
     const uniqueNotes = foundNoteNames.filter((n, i) => foundNoteNames.indexOf(n) === i);
-    console.log(`[searchNotes] Adding matches (up to ${maxResultsPerQuery || "however many"} results) from via queries`, queries.map((q) => q.join(" ")), `to ${uniqueNotes.length} note(s)`, uniqueNotes);
+    console.log(`[searchNotes] Seeking (up to ${maxResultsPerQuery || "however many"} results) from queries`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes);
   }
-
-  // lib/functions/search/candidate-evaluation.js
-  var LLM_SCORE_BODY_CONTENT_LENGTH = 3e3;
-  var MIN_ACCEPT_SCORE = 8;
-  var RANK_MATCH_COUNT_CAP = 10;
-  var RANK_MATCH_COUNT_WEIGHT = 1.5;
-  var RANK_PRIMARY_KEYWORD_WEIGHT = 10;
-  var RANK_RECENCY_BASE_SCORE = 5;
-  var RANK_RECENCY_DECAY_DAYS = 30;
-  var RANK_SECONDARY_KEYWORD_WEIGHT = 3;
-  var RANK_SECONDARY_KEYWORDS_TO_CHECK = 3;
-  var RANK_TAG_BOOST_WEIGHT = 5;
-  async function phase3_deepAnalysis(searchAgent, candidates, criteria) {
-    searchAgent.emitProgress("Phase 3: Analyzing top candidates...");
-    const preliminaryRanked = rankPreliminary(candidates, criteria);
-    const topN = Math.min(8, preliminaryRanked.length);
-    const topCandidates = preliminaryRanked.slice(0, topN);
-    console.log(`Deep analyzing top ${topN} of ${candidates.length} candidates`);
-    const deepAnalysis = await searchAgent.parallelLimit(
-      topCandidates.map((note) => () => analyzeNoteDeep(note, searchAgent, criteria)),
-      5
-      // Max 5 concurrent API calls
-    );
-    const validCandidates = deepAnalysis.filter((analysis) => {
-      const { checks } = analysis;
-      if (criteria.booleanRequirements.containsPDF && !checks.hasPDF)
-        return false;
-      if (criteria.booleanRequirements.containsImage && !checks.hasImage)
-        return false;
-      if (criteria.exactPhrase && !checks.hasExactPhrase)
-        return false;
-      if (criteria.booleanRequirements.containsURL && !checks.hasURL)
-        return false;
-      return true;
-    });
-    console.log(`${validCandidates.length} candidates passed criteria checks`);
-    searchAgent.emitProgress(`${validCandidates.length} notes match all criteria`);
-    return { validCandidates, allAnalyzed: deepAnalysis };
-  }
-  async function phase4_scoreAndRank(searchAgent, analyzedCandidates, criteria, userQuery) {
-    searchAgent.emitProgress("Phase 4: Ranking results...");
-    const now = /* @__PURE__ */ new Date();
-    const scoringPrompt = `
-You are scoring note search results. Original query: "${userQuery}"
-
-Extracted criteria:
-${JSON.stringify(criteria, null, 2)}
-
-Score each candidate note 0-10 on these dimensions:
-1. TITLE_RELEVANCE: How well does the note title match the search intent?
-2. KEYWORD_DENSITY: How concentrated are the keywords in the content?
-3. CRITERIA_MATCH: Does it meet all the hard requirements (PDF/image/URL/exact phrase)?
-4. TAG_ALIGNMENT: Does it have relevant or preferred tags?
-5. RECENCY: If the user specified recency requirement, does it meet that? If no user-specified requirement, score 10 for recency within a month of today (${now.toDateString()}), and scale down to 0 for candidates from 12+ months earlier.
-6. MATCH_COUNT_SIGNAL: Consider the candidate's MatchCount (how many separate query permutations matched this note across filterNotes/searchNotes). Higher MatchCount is a weak positive signal that the note is relevant, but should not override clear intent mismatch. Score 0-10 where 10 means "highly consistent match across many permutations".
-
-Candidates to score:
-${analyzedCandidates.map((candidate, index) => `
-${index}. "${candidate.note.name}"
-   UUID: ${candidate.note.uuid}
-   MatchCount: ${candidate.note.matchCount || 0}
-   Tags: ${candidate.note.tags?.join(", ") || "none"}
-   Updated: ${candidate.note.updated}
-   Checks: ${JSON.stringify(candidate.checks)}
-   Body Content (ending with $END$): ${candidate.content?.slice(0, LLM_SCORE_BODY_CONTENT_LENGTH)}
-$END$
-`).join("\n\n")}
-
-Return ONLY valid JSON array:
-[
-  {
-    "noteIndex": 0,
-    "titleRelevance": 8,
-    "keywordDensity": 7,
-    "criteriaMatch": 10,
-    "tagAlignment": 6,
-    "recency": 5,
-    "matchCountSignal": 4,
-    "reasoning": "Brief explanation of why this note matches"
-  }
-]
-`;
-    const scores = await searchAgent.llm(scoringPrompt, { jsonResponse: true });
-    console.log("Received scores from LLM:", scores);
-    const scoresArray = Array.isArray(scores) ? scores : [scores];
-    const weights = {
-      titleRelevance: 0.28,
-      keywordDensity: 0.23,
-      criteriaMatch: 0.2,
-      tagAlignment: 0.14,
-      recency: 0.1,
-      matchCountSignal: 0.05
-    };
-    const rankedNotes = scoresArray.map((score) => {
-      const finalScore = Object.entries(weights).reduce((sum, [key, weight]) => {
-        const rawValue = score[key];
-        const value = Number(rawValue === void 0 || rawValue === null ? 0 : rawValue);
-        return sum + value * weight;
-      }, 0);
-      return {
-        note: analyzedCandidates[score.noteIndex].note,
-        finalScore: Math.round(finalScore * 10) / 10,
-        // Round to 1 decimal
-        scoreBreakdown: score,
-        checks: analyzedCandidates[score.noteIndex].checks
-      };
-    }).sort((a, b) => b.finalScore - a.finalScore);
-    return rankedNotes;
-  }
-  async function phase5_sanityCheck(searchAgent, rankedNotes, criteria, userQuery) {
-    searchAgent.emitProgress(`Phase 5: Verifying ${pluralize(rankedNotes.length, "result")}...`);
-    if (rankedNotes.length === 0) {
-      return searchAgent.handleNoResults(criteria);
-    }
-    const pruneResult = rankedNotesAfterRemovingPoorMatches(rankedNotes);
-    if (pruneResult.removedCount) {
-      console.log(`Pruned ${pruneResult.removedCount} low-quality results (score < ${MIN_KEEP_RESULT_SCORE} or "poor match"), leaving ${pruneResult.rankedNotes.length} notes:`, pruneResult.rankedNotes);
-    } else {
-      console.log(`No results pruned among ${rankedNotes.length} candidates:`, rankedNotes);
-    }
-    rankedNotes = pruneResult.rankedNotes;
-    const topResult = rankedNotes[0];
-    if (topResult.finalScore >= MIN_ACCEPT_SCORE) {
-      searchAgent.emitProgress(`Found ${topResult.finalScore}/10 match, returning result.`);
-      return searchAgent.formatResult(true, rankedNotes, criteria.resultCount);
-    }
-    const sanityPrompt = `
-Original query: "${userQuery}"
-
-Top recommended note:
-- Title: "${topResult.note.name}"
-- Score: ${topResult.finalScore}/10
-- Tags: ${topResult.note.tags?.join(", ") || "none"}
-- Reasoning: ${topResult.scoreBreakdown.reasoning}
-
-Does this genuinely seem like what the user is looking for?
-
-Consider:
-1. Does the title make sense given the query?
-2. Is the score reasonable (>6.0 suggests good match)?
-3. Are there obvious mismatches?
-
-Return ONLY valid JSON:
-{
-  "confident": true,
-  "concerns": null,
-  "suggestAction": "accept"
-}
-
-Or if not confident:
-{
-  "confident": false,
-  "concerns": "Explanation of concern",
-  "suggestAction": "retry_broader" | "retry_narrower" | "insufficient_data"
-}
-`;
-    const sanityCheck = await searchAgent.llm(sanityPrompt, { jsonResponse: true });
-    if (sanityCheck.confident || searchAgent.retryCount >= searchAgent.maxRetries) {
-      searchAgent.emitProgress(`Search completed with ${pluralize(criteria.resultCount, "final result")}`);
-      return searchAgent.formatResult(true, rankedNotes, criteria.resultCount);
-    }
-    console.log(`Sanity check failed: ${sanityCheck.concerns}`);
-    searchAgent.retryCount++;
-    if (sanityCheck.suggestAction === "retry_broader") {
-      return searchAgent.retryWithBroaderCriteria(userQuery, criteria);
-    }
-    return searchAgent.formatResult(false, rankedNotes, criteria.resultCount);
-  }
-  async function analyzeNoteDeep(note, searchAgent, searchParams) {
-    const checks = {};
-    let content = null;
-    const needAttachments = searchParams.booleanRequirements.containsPDF;
-    const needImages = searchParams.booleanRequirements.containsImage;
-    const fetches = [];
-    if (needAttachments) {
-      fetches.push(
-        searchAgent.app.notes.find(note.uuid).then((n) => n.attachments()).then((attachments) => {
-          checks.hasPDF = attachments.some(
-            (a) => a.type === "application/pdf" || a.name.endsWith(".pdf")
-          );
-          checks.attachmentCount = attachments.length;
-        })
-      );
-    }
-    if (needImages) {
-      fetches.push(
-        searchAgent.app.notes.find(note.uuid).then((n) => n.images()).then((images) => {
-          checks.hasImage = images.length > 0;
-          checks.imageCount = images.length;
-        })
-      );
-    }
-    fetches.push(
-      searchAgent.app.notes.find(note.uuid).then((n) => n.content()).then((noteContent) => {
-        content = noteContent;
-        if (searchParams.exactPhrase) {
-          checks.hasExactPhrase = noteContent.includes(searchParams.exactPhrase);
-        }
-        if (searchParams.criteria.containsURL) {
-          checks.hasURL = /https?:\/\/[^\s]+/.test(noteContent);
-          const urls = noteContent.match(/https?:\/\/[^\s]+/g);
-          checks.urlCount = urls ? urls.length : 0;
-        }
-      })
-    );
-    await Promise.all(fetches);
-    console.log(`Deep analysis finds note "${note.name}" from ${JSON.stringify(searchParams)} finds needAttachments: ${checks.hasPDF}, needImages: ${checks.hasImage}, needContent: ${content ? "fetched" : "not fetched"}`);
-    return { note, content, checks };
-  }
-  function rankPreliminary(noteCandidates, searchParams) {
-    const msPerDay = 1e3 * 60 * 60 * 24;
-    const noteScores = noteCandidates.map((note) => {
-      let score = 0;
-      const titleLower = (note.name || "").toLowerCase();
-      searchParams.primaryKeywords.forEach((kw) => {
-        if (titleLower.includes(kw.toLowerCase())) {
-          score += RANK_PRIMARY_KEYWORD_WEIGHT;
-        }
+  async function filterNotesWithBody(queryArray, resultNotes) {
+    const eligibleNotes = await resultNotes.filter(async (note) => {
+      let body;
+      return queryArray.every(async (keyword) => {
+        const pattern = new RegExp(`(?:^|\\b|\\s)${keyword}`);
+        if (pattern.test(note.name, "i"))
+          return true;
+        body = body ? body : (await note.content()).slice(0, MAX_CHARACTERS_TO_SEARCH_BODY);
+        return pattern.test(body);
       });
-      searchParams.secondaryKeywords.slice(0, RANK_SECONDARY_KEYWORDS_TO_CHECK).forEach((kw) => {
-        if (titleLower.includes(kw.toLowerCase())) {
-          score += RANK_SECONDARY_KEYWORD_WEIGHT;
-        }
-      });
-      score += Math.min(RANK_MATCH_COUNT_CAP, note.matchCount || 0) * RANK_MATCH_COUNT_WEIGHT;
-      score += (note._tagBoost || 1) * RANK_TAG_BOOST_WEIGHT;
-      if (searchParams.dateFilter) {
-        const daysSinceUpdate = (Date.now() - new Date(note.updated)) / msPerDay;
-        score += Math.max(0, RANK_RECENCY_BASE_SCORE - daysSinceUpdate / RANK_RECENCY_DECAY_DAYS);
-      }
-      return { note, preliminaryScore: score };
     });
-    const sortedByScore = noteScores.sort((a, b) => b.preliminaryScore - a.preliminaryScore);
-    return sortedByScore.map((item) => item.note);
-  }
-  function rankedNotesAfterRemovingPoorMatches(rankedNotes) {
-    const poorMatchRegex = /poor match/i;
-    const filteredRankedNotes = rankedNotes.filter((r) => {
-      const reasoning = r.scoreBreakdown && r.scoreBreakdown.reasoning ? r.scoreBreakdown.reasoning : "";
-      const hasPoorMatchLanguage = poorMatchRegex.test(reasoning);
-      return r.finalScore >= MIN_KEEP_RESULT_SCORE && !hasPoorMatchLanguage;
-    });
-    if (filteredRankedNotes.length && filteredRankedNotes.length < rankedNotes.length) {
-      return { rankedNotes: filteredRankedNotes, removedCount: rankedNotes.length - filteredRankedNotes.length };
-    }
-    return { rankedNotes, removedCount: 0 };
+    console.log(`Enforcing presence of ${queryArray} keywords yields ${eligibleNotes.length} eligible notes from ${resultNotes.length} input notes`);
+    return eligibleNotes;
   }
 
   // lib/functions/search/user-criteria.js
@@ -2705,7 +2803,7 @@ Or if not confident:
         criteria: options.criteria ? { ...extracted.criteria, ...options.criteria } : extracted.criteria,
         dateFilter: options.dateFilter !== void 0 ? options.dateFilter : extracted.dateFilter,
         tagRequirement: { ...extractedTagReq, ...optionsTagReq },
-        resultCount: options.resultCount || extracted.resultCount || 1
+        resultCount: options.resultCount || extracted.resultCount || DEFAULT_SEARCH_NOTES_RETURNED
       });
     }
     // --------------------------------------------------------------------------
@@ -2749,7 +2847,6 @@ Extract:
 6. TAG_REQUIREMENT:
    - mustHave: Tag that MUST be present (null if none required)
    - preferred: Tag that"s PREFERRED but not required (null if none)
-7. RESULT_COUNT: 1 for single best match, or N for top N results
 
 Return ONLY valid JSON:
 {
@@ -2766,7 +2863,6 @@ Return ONLY valid JSON:
     "mustHave": null,
     "preferred": null
   },
-  "resultCount": 1
 }
 `;
     const validateCriteria = (result) => {
@@ -2816,27 +2912,27 @@ Return ONLY valid JSON:
     // @param {string} [options.tagRequirement.preferred] - Tag that is PREFERRED but not required (normalized to lowercase with dashes)
     // @param {number} [options.resultCount=1] - Number of results to return (1 for single best match, N for top N)
     // @returns {Promise<SearchResult>} Search result with found notes, confidence scores, and summary note
-    async search(userQuery, options = {}) {
+    async search(userQuery, { criteria = {}, options = {} } = {}) {
       try {
         this.emitProgress("Starting search analysis...");
-        const criteria = await phase1_analyzeQuery(this, userQuery, options);
-        const candidates = await phase2_collectCandidates(this, criteria);
+        const searchCriteria = Object.keys(criteria).length ? criteria : await phase1_analyzeQuery(this, userQuery, options);
+        const candidates = await phase2_collectCandidates(this, searchCriteria);
         if (candidates.length === 0) {
-          return this.handleNoResults(criteria);
+          return this.handleNoResults(searchCriteria);
         }
-        const { validCandidates, allAnalyzed } = await phase3_deepAnalysis(this, candidates, criteria);
+        const { validCandidates, allAnalyzed } = await phase3_deepAnalysis(this, candidates, searchCriteria);
         let rankedNotes;
         if (validCandidates.length === 0 && this.retryCount < this.maxRetries) {
-          return this.retryWithBroaderCriteria(userQuery, criteria);
-        } else if (validCandidates.length === 0 && allAnalyzed.length > 0) {
+          return this.nextSearchAttempt(userQuery, searchCriteria);
+        } else if (validCandidates.length === 0 && allAnalyzed.length) {
           console.log("No perfect matches found, using partial matches");
-          rankedNotes = await phase4_scoreAndRank(this, allAnalyzed, criteria, userQuery);
-        } else if (validCandidates.length > 0) {
-          rankedNotes = await phase4_scoreAndRank(this, validCandidates, criteria, userQuery);
+          rankedNotes = await phase4_scoreAndRank(this, allAnalyzed, searchCriteria, userQuery);
+        } else if (validCandidates.length) {
+          rankedNotes = await phase4_scoreAndRank(this, validCandidates, searchCriteria, userQuery);
         } else {
           rankedNotes = [];
         }
-        const finalResult = await phase5_sanityCheck(this, rankedNotes, criteria, userQuery);
+        const finalResult = await phase5_sanityCheck(this, rankedNotes, searchCriteria, userQuery);
         const summaryNote = await this.createSearchSummaryNote(userQuery, finalResult);
         finalResult.summaryNote = summaryNote;
         return finalResult;
@@ -2875,32 +2971,31 @@ Return ONLY valid JSON:
       throw new Error("Failed to get valid response from LLM after multiple attempts");
     }
     // --------------------------------------------------------------------------
+    // Format the final search result object
+    //
+    // @param {boolean} found - Whether a conclusive match was found
+    // @param {Array<SearchCandidateNote>} rankedNotes - Array of ranked SearchCandidateNote instances
+    // @param {number} resultCount - Number of results requested
+    // @returns {Object} Result object with confidence, found status, message, and notes array
     formatResult(found, rankedNotes, resultCount) {
       const bestMatch = rankedNotes[0];
       if (bestMatch) {
+        const notes = rankedNotes.slice(0, resultCount);
+        notes.forEach((note, index) => {
+          note.rank = index + 1;
+        });
         return {
           confidence: bestMatch.finalScore,
           found,
           message: `Found ${pluralize(resultCount, "note")}${found ? " matching" : ", none that quite match"} your criteria`,
-          notes: rankedNotes.slice(0, resultCount).map((r, i) => ({
-            checks: r.checks,
-            note: {
-              name: r.note.name,
-              tags: r.note.tags || [],
-              updated: r.note.updated,
-              url: noteUrlFromUUID(r.note.uuid),
-              uuid: r.note.uuid
-            },
-            rank: i + 1,
-            reasoning: r.scoreBreakdown.reasoning,
-            score: r.finalScore
-          }))
+          notes
         };
       } else {
         return {
           confidence: 0,
           found,
-          message: "Could not find any notes matching your criteria"
+          message: "Could not find any notes matching your criteria",
+          notes: []
         };
       }
     }
@@ -2908,8 +3003,7 @@ Return ONLY valid JSON:
     // Create a summary note with search results
     async createSearchSummaryNote(userQuery, searchResult) {
       const { notes } = searchResult;
-      const rankedNotes = notes;
-      this.emitProgress(`Creating search summary note for ${rankedNotes.length} result${rankedNotes.length === 1 ? "" : "s"}...`);
+      this.emitProgress(`Creating search summary note for ${notes.length} result${notes.length === 1 ? "" : "s"}...`);
       try {
         const modelUsed = preferredModel(this.app, this.lastModelUsed) || "unknown model";
         const titlePrompt = `Create a brief, descriptive title (max 40 chars) for a search results note.
@@ -2928,17 +3022,16 @@ Return ONLY the title text, nothing else.`;
         noteContent += `${searchResult.message}
 
 `;
-        if (rankedNotes && rankedNotes.length > 0) {
-          noteContent += `## Matched Notes (${rankedNotes.length})
+        if (notes?.length) {
+          noteContent += `## Matched Notes (${notes.length})
 
 `;
           noteContent += `| ***Note*** | ***Score (1-10)*** | ***Reasoning*** | ***Tags*** |
 `;
           noteContent += `| --- | --- | --- | --- |
 `;
-          rankedNotes.forEach((ranked, index) => {
-            const note = ranked.note;
-            noteContent += `| [${note.name}](${noteUrlFromUUID(note.uuid)}) | ${ranked.score?.toFixed(1)} | ${ranked.reasoning || "N/A"} | ${note.tags && note.tags.length > 0 ? note.tags.join(", ") : "Not found"} |
+          notes.forEach((note) => {
+            noteContent += `| [${note.name}](${note.url}) | ${note.finalScore?.toFixed(1)} | ${note.reasoning || "N/A"} | ${note.tags && note.tags.length > 0 ? note.tags.join(", ") : "Not found"} |
 `;
           });
         } else {
@@ -2962,6 +3055,21 @@ No notes matched the search criteria.
       }
     }
     // --------------------------------------------------------------------------
+    // Retry with broader search criteria
+    async nextSearchAttempt(userQuery, criteria) {
+      this.retryCount++;
+      if (this.retryCount === 1) {
+        this.searchAttempt = ATTEMPT_KEYWORD_PAIRS;
+        console.log("Retrying with keyword pairs strategy...");
+        this.emitProgress("Retrying with keyword pairs...");
+      } else if (this.retryCount >= 2) {
+        this.searchAttempt = ATTEMPT_INDIVIDUAL;
+        console.log("Retrying with individual keyword strategy...");
+        this.emitProgress("Retrying with individual keywords...");
+      }
+      return this.search(userQuery, { criteria });
+    }
+    // --------------------------------------------------------------------------
     onProgress(callback) {
       this.progressCallback = callback;
     }
@@ -2982,32 +3090,6 @@ No notes matched the search criteria.
         }
       }
       return Promise.all(results);
-    }
-    // --------------------------------------------------------------------------
-    // Retry with broader search criteria
-    async retryWithBroaderCriteria(userQuery, originalCriteria) {
-      this.retryCount++;
-      if (this.retryCount === 1) {
-        this.searchAttempt = ATTEMPT_KEYWORD_PAIRS;
-        console.log("Retrying with keyword pairs strategy...");
-        this.emitProgress("Retrying with keyword pairs...");
-      } else if (this.retryCount >= 2) {
-        this.searchAttempt = ATTEMPT_INDIVIDUAL;
-        console.log("Retrying with individual keyword strategy...");
-        this.emitProgress("Retrying with individual keywords...");
-      }
-      const broaderCriteria = originalCriteria.withOverrides({
-        primaryKeywords: [
-          ...originalCriteria.primaryKeywords,
-          ...originalCriteria.secondaryKeywords.slice(0, 2)
-        ],
-        tagRequirement: {
-          mustHave: null,
-          // Remove hard tag requirement
-          preferred: originalCriteria.tagRequirement.mustHave || originalCriteria.tagRequirement.preferred
-        }
-      });
-      return this.search(userQuery, broaderCriteria);
     }
     // --------------------------------------------------------------------------
     // Handle no results found
@@ -3282,7 +3364,7 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
         if (!result)
           return;
         const [userQuery, changedSince, onlyTags, maxNotesCount, preferredAiModel] = result;
-        console.debug(`Search criteria received: query="${userQuery}", changedSince=${changedSince}, onlyTags=${onlyTags}, maxNotesCount=${maxNotesCount}, preferredAiModel=${preferredAiModel}`);
+        console.log(`Search criteria received: query="${userQuery}", changedSince=${changedSince}, onlyTags=${onlyTags}, maxNotesCount=${maxNotesCount || `(unspecified, so ${DEFAULT_SEARCH_NOTES_RETURNED})`}, preferredAiModel=${preferredAiModel}`);
         if (!userQuery?.length)
           return;
         searchAgent.onProgress((progressText) => {
@@ -3293,11 +3375,11 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
         }
         searchAgent.emitProgress(`Starting search for ${userQuery.length}-length user query`);
         await app.openEmbed();
-        await searchAgent.search(userQuery, {
+        await searchAgent.search(userQuery, { options: {
           dateFilter: { after: changedSince },
-          resultCount: maxNotesCount || 1,
+          resultCount: maxNotesCount || DEFAULT_SEARCH_NOTES_RETURNED,
           tagRequirement: { mustHave: onlyTags }
-        });
+        } });
       },
       // --------------------------------------------------------------------------
       "Show AI Usage by Model": async function(app) {
