@@ -119,7 +119,7 @@ describe("Search Agent", () => {
 
     const app = mockApp(notes);
     mockAlertAccept(app);
-    app.settings[AI_MODEL_LABEL] = defaultTestModel("anthropic");
+    app.settings[AI_MODEL_LABEL] = testModel;
 
     const searchAgent = new SearchAgent(app, plugin);
     const result = await searchAgent.search("Find food notes", { options: {
@@ -132,6 +132,31 @@ describe("Search Agent", () => {
   }, AWAIT_TIME * DEBUG_MULTIPLIER);
 
   // --------------------------------------------------------------------------------------
+  it("should filter candidates by multiple must-have tags", async () => {
+    const notes = [
+      mockNote("Recipes from Mother", "# Food Recipes\n\nMy collection of cooking recipes and meal ideas.",
+        "note-tags-001", {tags: ["food", "recipes"]}
+      ),
+      mockNote("Food Ideas", "# Food\n\nSome cooking ideas, but missing the recipes tag.",
+        "note-tags-002", {tags: ["food"]}
+      )
+    ];
+
+    const app = mockApp(notes);
+    mockAlertAccept(app);
+    app.settings[AI_MODEL_LABEL] = testModel;
+
+    const searchAgent = new SearchAgent(app, plugin);
+    const result = await searchAgent.search("Find food notes", { options: {
+      tagRequirement: { mustHave: ["food", "recipes"], preferred: null }
+    }});
+
+    expect(result.found).toBe(true);
+    const bestResultNote = result.notes[0];
+    expect(bestResultNote.uuid).toBe("note-tags-001");
+  }, AWAIT_TIME * DEBUG_MULTIPLIER);
+
+  // --------------------------------------------------------------------------------------
   describe("With a multitude of vaguely finance-related notes", () => {
     let notes;
 
@@ -140,7 +165,7 @@ describe("Search Agent", () => {
         [ "Unfiled screenshot picture moments memories record photo thoughts", "Collection of random screenshots I've taken over the years. Need to organize these better. Photos from conferences, random memes, architecture shots from my trip to Barcelona. Some pictures are worth keeping, others probably not. The memories captured here range from meaningful to completely random. I should create albums for different categories.", "archive" ],
         [ "Light reading", "Just finished 'The Night Circus' by Erin Morgenstern. Beautiful prose and imaginative world-building. The story follows two young magicians bound in a competition. There's a quote I loved: 'The circus arrives without warning, its finances a mystery to all who attend.' The author really captures the mystique of the setting. Would recommend to anyone who enjoys magical realism and romance. Planning to read her other book 'The Starless Sea' next. Overall rating: 4.5 out of 5 stars.", "books/reviews" ],
         [ "Business Inbox Todo", "Tasks to complete this week: Review Q3 marketing materials, update website copy for new product launch, schedule dentist appointment, call mom for her birthday, research vacation destinations for summer trip. Also need to look into refinancing options - the interest rates have changed significantly. John mentioned some financial advisors but I need to vet their credentials first. Don't forget to pick up groceries on Thursday and submit expense reports by Friday. The new project timeline is worth reviewing before Monday's meeting.", "business" ],
-        [ "Merge report - Is it time to retire the same old conventions? (Daylight Time)", "Merged performance optimization branch into main. Implemented lazy loading for images, reduced API calls by 40%, and optimized database queries. Initial benchmarks show page load time improved from 2.3s to 1.1s. This work is definitely worth the effort we put in. Cache invalidation strategy updated to prevent stale data issues. Monitoring metrics to ensure no regressions in production." ],
+        [ "Merge report - Is it time to retire the same old conventions? (Daylight Time)", "Merged performance optimization branch into main. Implemented lazy loading for images, reduced API calls by 40%, and optimized database queries. Initial benchmarks show page load time improved from 2.3s to 1.1s. This work is definitely worth the effort we put in. Cache invalidation strategy updated to prevent stale data issues. Monitoring metrics to ensure no regressions in production.", "business/updates" ],
         [ "Unified Task List: A sorted list of every task you've ever created", "This is my master task list that aggregates everything from various projects and personal todos. Using a custom script to sort by priority and due date automatically. The net result is that I never miss deadlines anymore and have much better visibility into my workload. Contains tasks from work projects, home improvements, learning goals, and social commitments. Currently tracking 347 active tasks across 23 different categories. The system has transformed my productivity and reduced my stress levels significantly.", "business/todo" ],
         [ "Merge report - Sun Aug 16 2020 08:56:51 GMT-0700 (Pacific Daylight Time)", "Follow-up merge to add monitoring and alerting for the payment processing fix. Implemented CloudWatch metrics to track transaction success rates in real-time. Added automated alerts for when failure rate exceeds 1%. This additional observability is worth having to catch similar issues faster in the future. Also updated runbook documentation for on-call engineers. Deployed to production without issues, monitoring dashboards look healthy." ],
         [ "Praise & Love Baby", "Collecting positive feedback and testimonials from Amplenote users. Sarah M. wrote: 'This app has completely transformed how I organize my research. The bidirectional linking and task management features are worth their weight in gold.' James K. said: 'Best note-taking app I've used in 10 years of trying different solutions.' We should feature these on the marketing site. The community enthusiasm is really motivating for the team. Planning to compile a monthly highlight reel of the best feedback to share internally." ],
