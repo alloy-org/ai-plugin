@@ -13,11 +13,21 @@ AmpleAI Plugin is an [Amplenote plugin](https://www.amplenote.com/help/developin
 
 ## Testing
 
-Run `NODE_OPTIONS=--experimental-vm-modules npm test` to run all the tests.
+To run a specific test file, use: `NODE_OPTIONS=--experimental-vm-modules npm test -- test/plugin.test.js`
 
-Or, to run a specific test file, use: `NODE_OPTIONS=--experimental-vm-modules npm test -- test/plugin.test.js`
+For Cursor & LLMs to invoke a test file
 
-If it complains about jsdom being absent, run `npm install -D jest-environment-jsdom` and try again.
+```bash
+cd /Users/bill/src/ai-plugin && NODE_OPTIONS=--experimental-vm-modules npm test -- test/path-to-file.test.js
+```
+
+And to invoke a test file while only running the test whose name includes "llama":
+
+```bash
+cd /Users/bill/src/ai-plugin && NODE_OPTIONS=--experimental-vm-modules npm test -- test/path-to-file.test.js  -t "llama"
+```
+
+Or to run allll the tests, `NODE_OPTIONS=--experimental-vm-modules npm test`
 
 ### Testing a single test 
 
