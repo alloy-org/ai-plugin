@@ -165,8 +165,8 @@ describe("Search Agent", () => {
         [ "Unfiled screenshot picture moments memories record photo thoughts", "Collection of random screenshots I've taken over the years. Need to organize these better. Photos from conferences, random memes, architecture shots from my trip to Barcelona. Some pictures are worth keeping, others probably not. The memories captured here range from meaningful to completely random. I should create albums for different categories.", "archive" ],
         [ "Light reading", "Just finished 'The Night Circus' by Erin Morgenstern. Beautiful prose and imaginative world-building. The story follows two young magicians bound in a competition. There's a quote I loved: 'The circus arrives without warning, its finances a mystery to all who attend.' The author really captures the mystique of the setting. Would recommend to anyone who enjoys magical realism and romance. Planning to read her other book 'The Starless Sea' next. Overall rating: 4.5 out of 5 stars.", "books/reviews" ],
         [ "Business Inbox Todo", "Tasks to complete this week: Review Q3 marketing materials, update website copy for new product launch, schedule dentist appointment, call mom for her birthday, research vacation destinations for summer trip. Also need to look into refinancing options - the interest rates have changed significantly. John mentioned some financial advisors but I need to vet their credentials first. Don't forget to pick up groceries on Thursday and submit expense reports by Friday. The new project timeline is worth reviewing before Monday's meeting.", "business" ],
-        [ "Merge report - Is it time to retire the same old conventions? (Daylight Time)", "Merged performance optimization branch into main. Implemented lazy loading for images, reduced API calls by 40%, and optimized database queries. Initial benchmarks show page load time improved from 2.3s to 1.1s. This work is definitely worth the effort we put in. Cache invalidation strategy updated to prevent stale data issues. Monitoring metrics to ensure no regressions in production.", "business/updates" ],
-        [ "Unified Task List: A sorted list of every task you've ever created", "This is my master task list that aggregates everything from various projects and personal todos. Using a custom script to sort by priority and due date automatically. The net result is that I never miss deadlines anymore and have much better visibility into my workload. Contains tasks from work projects, home improvements, learning goals, and social commitments. Currently tracking 347 active tasks across 23 different categories. The system has transformed my productivity and reduced my stress levels significantly.", "business/todo" ],
+        [ "Merge report - Is it time to retire the same old conventions? (Daylight Time)", "Merged performance optimization branch into main. This engineering work directly impacts our Q4 Business Goals for platform stability and user retention. Implemented lazy loading for images, reduced API calls by 40%, and optimized database queries. Initial benchmarks show page load time improved from 2.3s to 1.1s. This work is definitely worth the effort we put in. Cache invalidation strategy updated to prevent stale data issues. Monitoring metrics to ensure no regressions in production.", "business/updates" ],
+        [ "Unified Task List: A sorted list of every task you've ever created", "This is my master task list that aggregates everything from various projects and personal todos. Using a custom script to sort by priority and due date automatically. The net result is that I never miss deadlines anymore and have much better visibility into my workload. Contains tasks from business projects, home improvements, learning goals, and social commitments. Currently tracking 347 active tasks across 23 different categories. The system has transformed my productivity and reduced my stress levels significantly.", "business/todo" ],
         [ "Merge report - Sun Aug 16 2020 08:56:51 GMT-0700 (Pacific Daylight Time)", "Follow-up merge to add monitoring and alerting for the payment processing fix. Implemented CloudWatch metrics to track transaction success rates in real-time. Added automated alerts for when failure rate exceeds 1%. This additional observability is worth having to catch similar issues faster in the future. Also updated runbook documentation for on-call engineers. Deployed to production without issues, monitoring dashboards look healthy." ],
         [ "Praise & Love Baby", "Collecting positive feedback and testimonials from Amplenote users. Sarah M. wrote: 'This app has completely transformed how I organize my research. The bidirectional linking and task management features are worth their weight in gold.' James K. said: 'Best note-taking app I've used in 10 years of trying different solutions.' We should feature these on the marketing site. The community enthusiasm is really motivating for the team. Planning to compile a monthly highlight reel of the best feedback to share internally." ],
         [ "Code quality targets: Advice on specific, substantiated goals for code quality", "Setting measurable code quality goals for our engineering team. Targets include: maintaining test coverage above 80%, keeping cyclomatic complexity under 10 for new functions, ensuring all public APIs have documentation, limiting file sizes to under 500 lines where possible. The net benefit of these standards is more maintainable code and faster onboarding for new developers. We should track these metrics in our CI/CD pipeline and fail builds that don't meet thresholds. Also considering adding automated code review tools like SonarQube to provide continuous feedback. Need to balance perfectionism with pragmatism - the goal is sustainable quality improvement, not blocking all progress. Team feedback has been mostly positive, though some developers feel the complexity limits are too strict for certain algorithmic code.", "gitclear/blog" ],
@@ -210,6 +210,45 @@ describe("Search Agent", () => {
       expect(result.found).toBe(true);
       expect(result.notes).toBeDefined();
       expect(expectedNames.sort()).toStrictEqual(result.notes.map(n => n.name).sort());
+    }, AWAIT_TIME * DEBUG_MULTIPLIER);
+
+    it("should find notes that include a tag and updated stamp", async () => {
+      const app = mockApp(notes);
+      mockAlertAccept(app);
+      app.settings[AI_MODEL_LABEL] = testModel;
+      const searchAgent = new SearchAgent(app, plugin);
+
+      // Derive expected matches dynamically
+      const twoWeeksAgo = new Date();
+      twoWeeksAgo.setDate(twoWeeksAgo.getDate() - 14);
+      // Use YYYY-MM-DD to match likely dateFilter format
+      const dateString = twoWeeksAgo.toISOString().split("T")[0];
+      const afterDate = new Date(dateString);
+
+      const expectedNotes = notes.filter(n => {
+        const matchesTag = n.tags && n.tags.some(t => t === "business" || t.startsWith("business/"));
+        const noteDate = new Date(n.updated);
+        // Note: phase2 uses >= comparison
+        return matchesTag && noteDate >= afterDate;
+      });
+
+      const userQuery = "Find business notes updated in the last two weeks";
+      const result = await searchAgent.search(userQuery, {
+        options: {
+          tagRequirement: { mustHave: "business", preferred: null },
+          dateFilter: { type: "updated", after: dateString }
+        }
+      });
+
+      expect(result.found).toBe(true);
+      expect(result.notes).toBeDefined();
+
+      const expectedUuids = expectedNotes.map(n => n.uuid).sort();
+      const actualUuids = result.notes.map(n => n.uuid).sort();
+
+      expect(actualUuids).toEqual(expectedUuids);
+      // Ensure we found at least some notes to make the test meaningful
+      expect(actualUuids.length).toBeGreaterThan(0);
     }, AWAIT_TIME * DEBUG_MULTIPLIER);
   });
 });
