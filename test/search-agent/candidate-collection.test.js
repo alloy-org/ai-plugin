@@ -41,20 +41,19 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     tagRequirement: { mustHave: null, preferred: null },
   };
 
-  // keyword_pairs permutations for 3 keywords are:
-  // primary: "project meeting", "meeting summary", "project summary"
-  const primaryQueries = ["project meeting", "meeting summary", "project summary"];
-  // secondary: "agenda action", "action follow-up", "agenda follow-up"
-  const secondaryQueries = ["agenda action", "action follow-up", "agenda follow-up"];
+  // First pass: each keyword searched individually
+  const primaryQueries = ["project", "meeting", "summary"];
+  // Secondary keywords also searched individually
+  const secondaryQueries = ["agenda", "action", "follow-up"];
 
   it("1) only uses primaryKeywords + filterNotes when primary filterNotes yields enough candidates", async () => {
     const app = mockApp(allNotes);
     app.searchNotes.mockImplementation(async () => []);
 
     app.filterNotes.mockImplementation(async ({ query }) => {
-      if (query === "project meeting") return [noteHighMatch, notePrimaryA, notePrimaryB, noteExtra1, noteExtra2];
-      if (query === "meeting summary") return [noteHighMatch, notePrimaryB, notePrimaryC, noteExtra3];
-      if (query === "project summary") return [noteHighMatch, notePrimaryA, notePrimaryC, noteExtra4, noteSecondaryA, noteSecondaryB];
+      if (query === "project") return [noteHighMatch, notePrimaryA, notePrimaryB, noteExtra1, noteExtra2];
+      if (query === "meeting") return [noteHighMatch, notePrimaryB, notePrimaryC, noteExtra3];
+      if (query === "summary") return [noteHighMatch, notePrimaryA, notePrimaryC, noteExtra4, noteSecondaryA, noteSecondaryB];
       return [];
     });
 
@@ -77,14 +76,14 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     app.searchNotes.mockImplementation(async () => []);
 
     app.filterNotes.mockImplementation(async ({ query }) => {
-      // Primary permutations yield only 3 uniques total -> forces broadening with secondary filterNotes.
+      // Primary keywords yield only 3 uniques total -> forces broadening with secondary filterNotes.
       if (primaryQueries.includes(query)) return [noteHighMatch, notePrimaryA];
 
-      // Secondary permutations add enough uniques to exceed minimums -> no searchNotes.
+      // Secondary keywords add enough uniques to exceed minimums -> no searchNotes.
       // Ensure we reach at least MIN_FILTER_NOTES_RESULTS unique candidates (currently 10).
-      if (query === "agenda action") return [noteSecondaryA, noteSecondaryB, noteExtra1, noteExtra2, notePrimaryB, notePrimaryC];
-      if (query === "action follow-up") return [noteSecondaryB, noteSecondaryC, noteExtra3, noteExtra4];
-      if (query === "agenda follow-up") return [noteSecondaryA, noteSecondaryC];
+      if (query === "agenda") return [noteSecondaryA, noteSecondaryB, noteExtra1, noteExtra2, notePrimaryB, notePrimaryC];
+      if (query === "action") return [noteSecondaryB, noteSecondaryC, noteExtra3, noteExtra4];
+      if (query === "follow-up") return [noteSecondaryA, noteSecondaryC];
       return [];
     });
 
@@ -111,9 +110,9 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     });
 
     app.searchNotes.mockImplementation(async (query) => {
-      if (query === "project meeting") return [noteHighMatch, notePrimaryA, notePrimaryB, noteExtra1, noteExtra2];
-      if (query === "meeting summary") return [noteHighMatch, notePrimaryC, noteExtra3];
-      if (query === "project summary") return [noteHighMatch, noteExtra4, noteSecondaryA, noteSecondaryB, noteSecondaryC];
+      if (query === "project") return [noteHighMatch, notePrimaryA, notePrimaryB, noteExtra1, noteExtra2];
+      if (query === "meeting") return [noteHighMatch, notePrimaryC, noteExtra3];
+      if (query === "summary") return [noteHighMatch, noteExtra4, noteSecondaryA, noteSecondaryB, noteSecondaryC];
       return [];
     });
 
@@ -138,14 +137,14 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
 
     app.searchNotes.mockImplementation(async (query) => {
       // Primary searchNotes adds some, but not enough to reach MIN_FILTER_NOTES_RESULTS.
-      if (query === "project meeting") return [noteHighMatch, notePrimaryA, notePrimaryB];
-      if (query === "meeting summary") return [noteHighMatch, notePrimaryC];
-      if (query === "project summary") return [noteHighMatch];
+      if (query === "project") return [noteHighMatch, notePrimaryA, notePrimaryB];
+      if (query === "meeting") return [noteHighMatch, notePrimaryC];
+      if (query === "summary") return [noteHighMatch];
 
       // Secondary searchNotes is required to reach enough candidates.
-      if (query === "agenda action") return [noteSecondaryA, noteSecondaryB, noteExtra1];
-      if (query === "action follow-up") return [noteSecondaryC, noteExtra2, noteExtra3];
-      if (query === "agenda follow-up") return [noteExtra4];
+      if (query === "agenda") return [noteSecondaryA, noteSecondaryB, noteExtra1];
+      if (query === "action") return [noteSecondaryC, noteExtra2, noteExtra3];
+      if (query === "follow-up") return [noteExtra4];
       return [];
     });
 
