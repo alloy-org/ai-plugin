@@ -1,5 +1,5 @@
+import { ATTEMPT_FIRST_PASS } from "constants/search-settings"
 import { phase2_collectCandidates } from "functions/search/phase2-candidate-collection"
-import { ATTEMPT_KEYWORD_PAIRS } from "constants/search-settings"
 import { mockApp, mockNote } from "../test-helpers"
 
 describe("Candidate collection (strategy precedence + matchCount)", () => {
@@ -58,7 +58,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_KEYWORD_PAIRS, emitProgress: () => {} };
+    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
 
     const candidates = await phase2_collectCandidates(searchAgent, criteria);
@@ -88,7 +88,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_KEYWORD_PAIRS, emitProgress: () => {} };
+    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
 
     const candidates = await phase2_collectCandidates(searchAgent, criteria);
@@ -117,7 +117,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_KEYWORD_PAIRS, emitProgress: () => {} };
+    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords: [] };
 
     const candidates = await phase2_collectCandidates(searchAgent, criteria);
@@ -149,7 +149,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_KEYWORD_PAIRS, emitProgress: () => {} };
+    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
 
     const candidates = await phase2_collectCandidates(searchAgent, criteria);
