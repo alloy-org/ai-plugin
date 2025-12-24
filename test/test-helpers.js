@@ -125,12 +125,18 @@ export function mockApp(notes, { plugin = null } = {}) {
   };
 
   // filterNotes - searches note titles and filters by tags
+  // Supports hierarchical tag matching: tag "business" matches "business", "business/updates", etc.
   app.filterNotes = jest.fn().mockImplementation(async (options = {}) => {
     const { query, tag } = options;
     let results = [...app._allNotes];
 
     if (tag) {
-      results = results.filter(note => note.tags && note.tags.includes(tag));
+      results = results.filter(note => {
+        if (!note.tags) return false;
+        return note.tags.some(noteTag =>
+          noteTag === tag || noteTag.startsWith(tag + "/")
+        );
+      });
     }
 
     if (query) {
