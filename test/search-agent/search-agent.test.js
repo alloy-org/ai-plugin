@@ -194,7 +194,7 @@ describe("Search Agent", () => {
       });
     });
 
-    it("should find notes related to user's net worth and retirement", async () => {
+    it("should find notes related to long-term planning", async () => {
       const app = mockApp(notes);
       mockAlertAccept(app);
       app.settings[AI_MODEL_LABEL] = testModel;
