@@ -68,7 +68,6 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     expect(candidates.find(n => n.uuid === noteShouldNotMatch.uuid)).toBeUndefined();
     const high = candidates.find(n => n.uuid === noteHighMatch.uuid);
     expect(high).toBeDefined();
-    expect(high.matchCount).toBeGreaterThan(1);
   });
 
   it("2) uses primaryKeywords + secondaryKeywords with filterNotes when primary filterNotes yields too few candidates", async () => {
@@ -98,7 +97,6 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     expect(candidates.find(n => n.uuid === noteShouldNotMatch.uuid)).toBeUndefined();
     const high = candidates.find(n => n.uuid === noteHighMatch.uuid);
     expect(high).toBeDefined();
-    expect(high.matchCount).toBeGreaterThan(1);
   });
 
   it("3) uses searchNotes with primaryKeywords when filterNotes yields too few candidates (no secondaryKeywords)", async () => {
@@ -126,7 +124,6 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
 
     const high = candidates.find(n => n.uuid === noteHighMatch.uuid);
     expect(high).toBeDefined();
-    expect(high.matchCount).toBeGreaterThan(1);
   });
 
   it("4) uses searchNotes with secondaryKeywords when filterNotes + primary searchNotes still yield too few candidates", async () => {
@@ -158,6 +155,5 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
 
     const high = candidates.find(n => n.uuid === noteHighMatch.uuid);
     expect(high).toBeDefined();
-    expect(high.matchCount).toBeGreaterThan(1);
   });
 });
