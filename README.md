@@ -15,7 +15,8 @@ AmpleAI Plugin is an [Amplenote plugin](https://www.amplenote.com/help/developin
 
 To run a specific test file, use: `NODE_OPTIONS=--experimental-vm-modules npm test -- test/plugin.test.js`
 
-For Cursor & LLMs to invoke a test file
+For Cursor & LLMs to invoke a test file, the following needs to run OUTSIDE SANDBOX MODE, otherwise the tests 
+will fail with "Error: Cannot find module '@jest/test-sequencer'"
 
 ```bash
 cd /Users/bill/src/ai-plugin && NODE_OPTIONS=--experimental-vm-modules npm test -- test/path-to-file.test.js

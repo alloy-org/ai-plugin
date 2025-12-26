@@ -2,6 +2,7 @@ import { ATTEMPT_FIRST_PASS } from "constants/search-settings"
 import { phase2_collectCandidates } from "functions/search/phase2-candidate-collection"
 import { mockApp, mockNote } from "../test-helpers"
 
+// --------------------------------------------------------------------------
 describe("Candidate collection (strategy precedence + matchCount)", () => {
   const primaryKeywords = ["project", "meeting", "summary"];
   const secondaryKeywords = ["agenda", "action", "follow-up"];
@@ -46,6 +47,11 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
   // Secondary keywords also searched individually
   const secondaryQueries = ["agenda", "action", "follow-up"];
 
+  // --------------------------------------------------------------------------
+  function mockSearchAgent(app) {
+    return { app, emitProgress: () => {}, searchAttempt: ATTEMPT_FIRST_PASS, summaryNoteTag: () => null };
+  }
+
   it("1) only uses primaryKeywords + filterNotes when primary filterNotes yields enough candidates", async () => {
     const app = mockApp(allNotes);
     app.searchNotes.mockImplementation(async () => []);
@@ -57,10 +63,8 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
-
-    const candidates = await phase2_collectCandidates(searchAgent, criteria);
+    const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
 
     expect(app.searchNotes).not.toHaveBeenCalled();
     expect(app.filterNotes.mock.calls.map(args => args[0].query)).toEqual(primaryQueries);
@@ -86,10 +90,8 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
-
-    const candidates = await phase2_collectCandidates(searchAgent, criteria);
+    const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
 
     expect(app.searchNotes).not.toHaveBeenCalled();
     expect(app.filterNotes.mock.calls.map(args => args[0].query)).toEqual([...primaryQueries, ...secondaryQueries]);
@@ -114,10 +116,8 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords: [] };
-
-    const candidates = await phase2_collectCandidates(searchAgent, criteria);
+    const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
 
     expect(app.searchNotes.mock.calls.map(args => args[0])).toEqual(primaryQueries);
     expect(candidates.find(n => n.uuid === noteShouldNotMatch.uuid)).toBeUndefined();
@@ -145,10 +145,8 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       return [];
     });
 
-    const searchAgent = { app, searchAttempt: ATTEMPT_FIRST_PASS, emitProgress: () => {} };
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
-
-    const candidates = await phase2_collectCandidates(searchAgent, criteria);
+    const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
 
     expect(app.searchNotes.mock.calls.map(args => args[0])).toEqual([...primaryQueries, ...secondaryQueries]);
     expect(candidates.find(n => n.uuid === noteShouldNotMatch.uuid)).toBeUndefined();
