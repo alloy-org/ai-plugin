@@ -2238,14 +2238,11 @@ Will be utilized after your preliminary approval`,
     }
     const pruneResult = rankedNotesAfterRemovingPoorMatches(rankedNotes);
     if (pruneResult.removedCount) {
-      console.log(
-        `Pruned ${pruneResult.removedCount} low-quality results (score < ${MIN_KEEP_RESULT_SCORE} or "poor match"), leaving ${pruneResult.rankedNotes.length} notes:`,
-        pruneResult.rankedNotes.map((n) => ({ name: n.name, finalScore: n.finalScore, scoreBreakdown: n.scoreBreakdown, updated: n.updated }))
-      );
+      rankedNotes = pruneResult.rankedNotes;
+      console.log(`Pruned ${pluralize(pruneResult.removedCount, "low quality result")} (score < ${MIN_KEEP_RESULT_SCORE} or "poor match"), leaving ${pruneResult.rankedNotes.length} notes:`, rankedNotes.map((n) => debugData(n)));
     } else {
-      console.log(`No results pruned among ${rankedNotes.length} candidates:`, rankedNotes);
+      console.log(`No results pruned among ${rankedNotes.length} candidates:`, rankedNotes.map((n) => debugData(n)));
     }
-    rankedNotes = pruneResult.rankedNotes;
     const topResult = rankedNotes[0];
     if (topResult.finalScore >= MIN_ACCEPT_SCORE) {
       searchAgent.emitProgress(`Found ${topResult.finalScore}/10 match, returning up to ${pluralize(criteria.resultCount, "result")} (type ${typeof criteria.resultCount})`);
@@ -2754,7 +2751,7 @@ Return ONLY valid JSON array:
       console.log("No deep analysis criteria specified, skipping criteria confirmation phase");
       return { validCandidates: topCandidates, allAnalyzed: topCandidates };
     }
-    console.log(`Deep analyzing top ${MAX_DEEP_ANALYZED_NOTES} of ${candidates.length} candidates`);
+    console.log(`Deep analyzing top ${Math.min(MAX_DEEP_ANALYZED_NOTES, candidates.length)} of ${candidates.length} candidates`);
     const deepAnalyzedNotes = await searchAgent.parallelLimit(
       topCandidates.map((note) => () => analyzeNoteCriteriaMatch(note, searchAgent, criteria)),
       MAX_SEARCH_CONCURRENCY
@@ -2965,8 +2962,11 @@ Extract:
    - Same two-word pair preference applies here
    - Include category terms (e.g., "financial document" for credit card topics)
    - Include synonyms or abbreviations (e.g., "NY" for "New York", "ML" for "machine learning")
+   - Include single-word fallbacks from primary keyword phrases to catch partial matches
+     (e.g., if "gift ideas" is user query, include "gift" to catch any notes like "2019 gifts")
    - Return all keywords in singular form (e.g., "document" not "documents")
    - Examples: ["interest rate", "billing cycle", "cash back", "reward point"]
+   - Example for "gift ideas" query: ["gift", "birthday", "holiday", "christmas", "shopping list", "wishlist", "wish list"]
 
 3. EXACT_PHRASE: If user wants exact text match, extract it (or null)
 
@@ -3114,12 +3114,13 @@ Return ONLY valid JSON:
     // @returns {Object} Result object with confidence, found status, message, and notes array
     formatResult(found, rankedNotes, resultCount) {
       const bestMatch = rankedNotes[0];
+      const noteResults = rankedNotes.slice(0, resultCount);
       if (bestMatch) {
         return {
           confidence: bestMatch.finalScore,
           found,
-          message: `Found ${pluralize(resultCount, "note")}${found ? " matching" : ", none that quite match"} your criteria`,
-          notes: rankedNotes.slice(0, resultCount)
+          message: `Found ${pluralize(noteResults.length, "note")}${found ? " matching" : ", none that quite match"} your criteria`,
+          notes: noteResults
         };
       } else {
         return {
