@@ -37,6 +37,14 @@
   function cleanTextFromAnswer(answer) {
     return answer.split("\n").filter((line) => !/^(~~~|```(markdown)?)$/.test(line.trim())).join("\n");
   }
+  function debugData(noteHandleOrSearchCandidate) {
+    const isNoteHandle = "keywordDensityEstimate" in noteHandleOrSearchCandidate;
+    const contentAttr = isNoteHandle ? "content" : "bodyContent";
+    let v;
+    return Object.fromEntries(["name", "keywordDensityEstimate", "tags", contentAttr, "url"].map(
+      (k) => (v = noteHandleOrSearchCandidate[k]) && (!Array.isArray(v) || v.length) ? [k, typeof v === "string" && v.length > 100 ? `${v.slice(0, 100)}...` : v] : null
+    ).filter(Boolean));
+  }
   function jsonFromAiText(jsonText) {
     let json;
     const trimmed = jsonText.trim();
@@ -2352,15 +2360,14 @@ Return ONLY valid JSON array:
       }, 0);
       const note = candidates[score.noteIndex];
       if (note) {
-        const matchCountSignal = Math.min(RANK_MATCH_COUNT_CAP, note.matchCount || 1) * 0.2;
-        score.matchSignal = matchCountSignal;
-        const finalScore = weightedLlmScore + matchCountSignal;
+        score.keywordDensitySignal = Math.round(Math.min(RANK_MATCH_COUNT_CAP, note.keywordDensityEstimate || 1) * 0.2 * 10) / 10;
+        const finalScore = weightedLlmScore + score.keywordDensitySignal;
         note.finalScore = Math.round(finalScore * 10) / 10;
         note.scoreBreakdown = score;
         note.reasoning = score.reasoning;
       }
       return note;
-    }).filter((n) => n);
+    }).filter(Boolean);
   }
   async function scoreCandidateBatchWithRetry(searchAgent, candidates, criteria, userQuery) {
     try {
@@ -2377,6 +2384,7 @@ Return ONLY valid JSON array:
   }
 
   // lib/functions/search/search-candidate-note.js
+  var MAX_LENGTH_REDUCTION = 10;
   var SearchCandidateNote = class {
     // Private field for UUID to ensure url stays in sync
     #uuid;
@@ -2386,23 +2394,18 @@ Return ONLY valid JSON array:
     // @param {Array<string>} tags - Note tags
     // @param {string} created - ISO timestamp of note creation
     // @param {string} updated - ISO timestamp of last note update
-    // @param {string} bodyContent - Truncated note content (up to MAX_CHARACTERS_TO_SEARCH_BODY)
-    // @param {number} originalContentLength - Original length of full note content before truncation
-    // @param {number} matchCount - Number of search query permutations that matched this note
-    constructor(uuid, name, tags, created, updated, bodyContent, originalContentLength, matchCount = 1) {
+    constructor(uuid, name, tags, created, updated, { bodyContent = null } = {}) {
       this.#uuid = uuid;
+      this.created = created;
       this.name = name;
       this.tags = tags || [];
-      this.created = created;
       this.updated = updated;
-      this.bodyContent = bodyContent;
-      this.originalContentLength = originalContentLength;
+      this.bodyContent = bodyContent?.slice(0, MAX_CHARACTERS_TO_SEARCH_BODY);
+      this.originalContentLength = bodyContent?.length;
       this.keywordDensityEstimate = 0;
-      this.matchCount = matchCount;
-      this.tagBoost = 1;
+      this.tagBoost = 0;
       this.checks = {};
       this.finalScore = 0;
-      this.rank = 0;
       this.reasoning = null;
       this.scoreBreakdown = {};
     }
@@ -2431,18 +2434,13 @@ Return ONLY valid JSON array:
     //   - content() {Promise<string>} - Async method returning the note's markdown content
     // @param {number} matchCount - Initial match count (default 1)
     // @returns {Promise<SearchCandidateNote>} New instance with fetched and truncated content
-    static async create(noteHandle, fullContent, matchCount = 1) {
-      const originalContentLength = fullContent ? fullContent.length : 0;
-      const truncatedContent = fullContent ? fullContent.slice(0, MAX_CHARACTERS_TO_SEARCH_BODY) : "";
+    static create(noteHandle) {
       return new SearchCandidateNote(
         noteHandle.uuid,
         noteHandle.name,
         noteHandle.tags,
         noteHandle.created,
-        noteHandle.updated,
-        truncatedContent,
-        originalContentLength,
-        matchCount
+        noteHandle.updated
       );
     }
     // --------------------------------------------------------------------------
@@ -2483,13 +2481,22 @@ Return ONLY valid JSON array:
           totalPoints += KEYWORD_TAG_SECONDARY_WEIGHT;
         }
       }
-      const lengthDivisor = Math.max(1, this.originalContentLength / KEYWORD_DENSITY_DIVISOR);
-      this.keywordDensityEstimate = totalPoints / lengthDivisor;
+      const lengthReduction = Math.min(this.originalContentLength / KEYWORD_DENSITY_DIVISOR, MAX_LENGTH_REDUCTION);
+      this.keywordDensityEstimate = totalPoints - lengthReduction;
     }
     // --------------------------------------------------------------------------
     // Increment the match count for this candidate
     incrementMatchCount(amount = 1) {
       this.matchCount += amount;
+    }
+    // --------------------------------------------------------------------------
+    // Set the body content and original content length from the provided content string.
+    // Truncates the content to MAX_CHARACTERS_TO_SEARCH_BODY and updates originalContentLength.
+    //
+    // @param {string} content - The full note content
+    setBodyContent(content) {
+      this.originalContentLength = content ? content.length : 0;
+      this.bodyContent = content ? content.slice(0, MAX_CHARACTERS_TO_SEARCH_BODY) : "";
     }
     // --------------------------------------------------------------------------
     // Set the tag boost multiplier
@@ -2550,6 +2557,7 @@ Return ONLY valid JSON array:
 
   // lib/functions/search/phase2-candidate-collection.js
   async function phase2_collectCandidates(searchAgent, criteria) {
+    const startAt = /* @__PURE__ */ new Date();
     searchAgent.emitProgress("Phase 2: Filtering candidates...");
     const { dateFilter, primaryKeywords, resultCount, secondaryKeywords, tagRequirement } = criteria;
     let candidates = await searchNotesByStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement);
@@ -2575,7 +2583,7 @@ Return ONLY valid JSON array:
         note.setTagBoost(tagBoost);
       });
     }
-    searchAgent.emitProgress(`Found ${candidates.length} candidate notes`);
+    searchAgent.emitProgress(`Found ${candidates.length} candidate notes in ${Math.round((/* @__PURE__ */ new Date() - startAt) / 100) / 10}s`);
     return candidates;
   }
   async function addMatchesFromFilterNotes(searchAgent, candidatesByUuid, queries, tagRequirement) {
@@ -2595,13 +2603,12 @@ Return ONLY valid JSON array:
       );
       for (const perQueryNotes of batchResults) {
         for (const noteHandle of perQueryNotes) {
-          await upsertCandidate(candidatesByUuid, noteHandle, searchAgent, 1);
+          upsertCandidate(candidatesByUuid, noteHandle);
         }
       }
     }
-    const foundNoteNames = notesFound.map((n) => n.name);
-    const uniqueNotes = foundNoteNames.filter((n, i) => foundNoteNames.indexOf(n) === i);
-    console.log(`[filterNotes] Adding from queries`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes);
+    const uniqueNotes = notesFound.filter((n, i) => notesFound.indexOf(n) === i);
+    console.log(`[filterNotes] Filtering note titles from`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes.map((n) => debugData(n)));
   }
   async function addMatchesFromSearchNotes(searchAgent, candidatesByUuid, queries) {
     let notesFound = [];
@@ -2621,13 +2628,12 @@ Return ONLY valid JSON array:
       );
       for (const perQueryNotes of batchResults) {
         for (const noteHandle of perQueryNotes) {
-          await upsertCandidate(candidatesByUuid, noteHandle, searchAgent, 1);
+          upsertCandidate(candidatesByUuid, noteHandle);
         }
       }
     }
-    const foundNoteNames = notesFound.map((n) => n.name);
-    const uniqueNotes = foundNoteNames.filter((n, i) => foundNoteNames.indexOf(n) === i);
-    console.log(`[searchNotes] Seeking from queries`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes);
+    const uniqueNotes = notesFound.filter((n, i) => notesFound.indexOf(n) === i);
+    console.log(`[searchNotes] Searching note bodies with`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes.map((n) => debugData(n)));
   }
   async function executeSearchStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement) {
     if (!primaryKeywords?.length)
@@ -2666,9 +2672,12 @@ Return ONLY valid JSON array:
       console.log(`[${strategyName}] Searched ${primaryQueries.length} primary filterNotes queries: ${candidatesByUuid.size} unique candidates`);
     }
     const candidates = Array.from(candidatesByUuid.values());
-    for (const candidate of candidates) {
+    const densityPromises = candidates.map(async (candidate) => {
+      const content = await searchAgent.app.getNoteContent({ uuid: candidate.uuid });
+      candidate.setBodyContent(content);
       candidate.calculateKeywordDensityEstimate(primaryKeywords, secondaryKeywords);
-    }
+    });
+    await Promise.all(densityPromises);
     const finalResults = candidates.sort((a, b) => {
       const densityDiff = (b.keywordDensityEstimate || 0) - (a.keywordDensityEstimate || 0);
       if (densityDiff !== 0)
@@ -2677,6 +2686,7 @@ Return ONLY valid JSON array:
       const aUpdated = a.updated ? new Date(a.updated).getTime() : 0;
       return bUpdated - aUpdated;
     });
+    console.log(`Calculated keyword density estimates for ${finalResults.length} candidates`, finalResults.map((n) => debugData(n)));
     return finalResults.slice(0, maxResultsReturned);
   }
   async function filterNotesWithBody(queryArray, resultNotes) {
@@ -2714,19 +2724,11 @@ Return ONLY valid JSON array:
     }
     return unique;
   }
-  async function upsertCandidate(candidatesByUuid, noteHandle, searchAgent, increment = 1) {
-    if (!noteHandle?.uuid)
-      return;
+  async function upsertCandidate(candidatesByUuid, noteHandle) {
     const existing = candidatesByUuid.get(noteHandle.uuid);
-    if (existing) {
-      existing.incrementMatchCount(increment);
+    if (existing)
       return;
-    }
-    const candidate = await SearchCandidateNote.create(
-      noteHandle,
-      await searchAgent.app.getNoteContent(noteHandle.uuid),
-      increment
-    );
+    const candidate = SearchCandidateNote.create(noteHandle);
     candidatesByUuid.set(noteHandle.uuid, candidate);
   }
   function wordsFromMultiWordKeywords(keywords) {
@@ -3113,15 +3115,11 @@ Return ONLY valid JSON:
     formatResult(found, rankedNotes, resultCount) {
       const bestMatch = rankedNotes[0];
       if (bestMatch) {
-        const notes = rankedNotes.slice(0, resultCount);
-        notes.forEach((note, index) => {
-          note.rank = index + 1;
-        });
         return {
           confidence: bestMatch.finalScore,
           found,
           message: `Found ${pluralize(resultCount, "note")}${found ? " matching" : ", none that quite match"} your criteria`,
-          notes
+          notes: rankedNotes.slice(0, resultCount)
         };
       } else {
         return {
@@ -3266,10 +3264,6 @@ No notes matched the search criteria.
         return models;
       const withoutPreferred = models.filter((model) => model !== this.preferredAiModel);
       return [this.preferredAiModel, ...withoutPreferred];
-    }
-    // --------------------------------------------------------------------------
-    onProgress(callback) {
-      this.progressCallback = callback;
     }
     // --------------------------------------------------------------------------
     // Persist the user's preferred model choice onto the SearchAgent instance so every phase uses it.
