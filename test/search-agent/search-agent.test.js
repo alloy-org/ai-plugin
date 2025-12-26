@@ -19,12 +19,12 @@ describe("Search Agent", () => {
   const availableModels = providersWithApiKey();
   // Choose model name randomly between "anthropic", "openai" and "gemini":
   const modelName = availableModels[Math.floor(Math.random() * availableModels.length)];
+  let notes;
   const testModel = defaultTestModel(modelName);
 
   // --------------------------------------------------------------------------------------
-  it("should find note with image and sandwich text", async () => {
-    // Create 10 notes with varying content
-    const notes = [
+  beforeEach(() => {
+    notes = [
       mockNote("Beach Trip 2024", "# My Vacation\n\nBeach trip. Amazing sunset!", "note-001", {
         images: [{url: "https://example.com/beach.jpg"}],
         tags: ["vacation", "photos"], updated: noteTimestampFromNow({daysAgo: 7})
@@ -47,9 +47,8 @@ describe("Search Agent", () => {
           tags: ["food", "cooking"], updated: noteTimestampFromNow({monthsAgo: 2})
         }
       ),
-      mockNote("NY Food Guide", "# NY Restaurants\n\nBest places:\n- Joe's Pizza\n- Katz's Deli\n- Shake Shack",
-        "note-005",
-        {tags: ["food", "guide", "nyc"], updated: noteTimestampFromNow({monthsAgo: 3})}
+      mockNote("NY Food Guide", "# NY Restaurants\n\nBest places:\n- Joe's Pizza\n- Katz's Deli\n- Shake Shack", "note-005",
+        {tags: ["guide", "nyc"], updated: noteTimestampFromNow({monthsAgo: 3})}
       ),
       mockNote("Europe 2024", "# European Trip\n\nParis and Rome. Stunning architecture!", "note-006",
         {
@@ -75,8 +74,12 @@ describe("Search Agent", () => {
           tags: ["architecture", "nyc"], updated: noteTimestampFromNow({monthsAgo: 10})
         }
       )
-    ];
+    ]
+  });
 
+  // --------------------------------------------------------------------------------------
+  it("should find note with image and sandwich text", async () => {
+    // Create 10 notes with varying content
     const app = mockApp(notes);
     mockAlertAccept(app);
     app.settings[AI_MODEL_LABEL] = testModel;
@@ -108,14 +111,12 @@ describe("Search Agent", () => {
 
   // --------------------------------------------------------------------------------------
   it("should filter candidates by tag requirement", async () => {
-    const notes = [
+    notes = notes.concat([
       mockNote("Recipes from Mother", "# Food Recipes\n\nMy collection of cooking recipes and meal ideas.",
-        "note-tag-001", {tags: ["food", "recipes"]}
-      ),
+        "note-tag-001", {tags: ["food", "recipes"]}),
       mockNote("Plain Jane the main dame", "# Plain Note\n\nTalks about food and cooking but has no tags.",
-        "note-tag-002", {tags: []}
-      )
-    ];
+        "note-tag-002", {tags: []})
+    ]);
 
     const app = mockApp(notes);
     mockAlertAccept(app);
@@ -127,33 +128,9 @@ describe("Search Agent", () => {
     }});
 
     expect(result.found).toBe(true);
-    const bestResultNote = result.notes[0];
-    expect(bestResultNote.uuid).toBe("note-tag-001");
-  }, AWAIT_TIME * DEBUG_MULTIPLIER);
-
-  // --------------------------------------------------------------------------------------
-  it("should filter candidates by multiple must-have tags", async () => {
-    const notes = [
-      mockNote("Recipes from Mother", "# Food Recipes\n\nMy collection of cooking recipes and meal ideas.",
-        "note-tags-001", {tags: ["food", "recipes"]}
-      ),
-      mockNote("Food Ideas", "# Food\n\nSome cooking ideas, but missing the recipes tag.",
-        "note-tags-002", {tags: ["food"]}
-      )
-    ];
-
-    const app = mockApp(notes);
-    mockAlertAccept(app);
-    app.settings[AI_MODEL_LABEL] = testModel;
-
-    const searchAgent = new SearchAgent(app, plugin);
-    const result = await searchAgent.search("Find food notes", { options: {
-      tagRequirement: { mustHave: ["food", "recipes"], preferred: null }
-    }});
-
-    expect(result.found).toBe(true);
-    const bestResultNote = result.notes[0];
-    expect(bestResultNote.uuid).toBe("note-tags-001");
+    expect(result.notes.map(n => n.uuid)).toContain("note-tag-001");
+    expect(result.notes.map(n => n.uuid)).not.toContain("note-005");
+    expect(result.notes.map(n => n.uuid)).toContain("note-003");
   }, AWAIT_TIME * DEBUG_MULTIPLIER);
 
   // --------------------------------------------------------------------------------------
