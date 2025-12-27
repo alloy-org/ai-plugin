@@ -40,10 +40,18 @@
   function debugData(noteHandleOrSearchCandidate) {
     const isNoteHandle = "keywordDensityEstimate" in noteHandleOrSearchCandidate;
     const contentAttr = isNoteHandle ? "content" : "bodyContent";
-    let v;
-    return Object.fromEntries(["name", "keywordDensityEstimate", "tags", contentAttr, "url"].map(
-      (k) => (v = noteHandleOrSearchCandidate[k]) && (!Array.isArray(v) || v.length) ? [k, typeof v === "string" && v.length > 100 ? `${v.slice(0, 100)}...` : v] : null
-    ).filter(Boolean));
+    return Object.fromEntries(["name", "keywordDensityEstimate", "preContentMatchScore", "tags", contentAttr].map((k) => {
+      const value = noteHandleOrSearchCandidate[k];
+      if (!value || Array.isArray(value) && !value.length) {
+        return null;
+      } else if (typeof value === "string" && value.length > 100) {
+        return [k, `${value.slice(0, 100)}...`];
+      } else if (Number.isFinite(value)) {
+        return [k, Math.round(10 * value) / 10];
+      } else {
+        return [k, value];
+      }
+    }).filter(Boolean));
   }
   function jsonFromAiText(jsonText) {
     let json;
@@ -440,7 +448,15 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var KEYWORD_TAG_SECONDARY_WEIGHT = 0.5;
   var KEYWORD_TITLE_PRIMARY_WEIGHT = 5;
   var KEYWORD_TITLE_SECONDARY_WEIGHT = 2;
+  var MAX_CANDIDATES_FOR_DENSITY_CALCULATION = 100;
   var MAX_CHARACTERS_TO_SEARCH_BODY = 4e3;
+  var MAX_NOTES_PER_QUERY = 100;
+  var PRE_CONTENT_MAX_SCORE_PER_KEYWORD = 10;
+  var PRE_CONTENT_MIN_PRIMARY_SCORE = 0.5;
+  var PRE_CONTENT_MIN_SECONDARY_SCORE = 0.2;
+  var PRE_CONTENT_SECONDARY_MULTIPLIER = 0.5;
+  var PRE_CONTENT_TAG_WORD_PRIMARY_SCORE = 0.2;
+  var PRE_CONTENT_TAG_WORD_SECONDARY_SCORE = 0.1;
   var MAX_RESULTS_RETURNED = 30;
   var MAX_SEARCH_CONCURRENCY = 10;
   var MAX_SECONDARY_KEYWORDS_TO_QUERY = 15;
@@ -448,6 +464,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var MIN_KEEP_RESULT_SCORE = 5;
   var MIN_TARGET_RESULTS = 10;
   var RANK_MATCH_COUNT_CAP = 10;
+  var RESULT_TAG_DEFAULT = "plugins/ample-ai/search-results";
 
   // lib/constants/settings.js
   function settingKeyLabel(providerEm) {
@@ -461,6 +478,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var IMAGE_FROM_PROMPT_LABEL = "Image from prompt";
   var IS_TEST_ENVIRONMENT = typeof process !== "undefined" && process.env?.NODE_ENV === "test";
   var MAX_SPACES_ABORT_RESPONSE = 30;
+  var SEARCH_AGENT_RESULT_TAG_LABEL = `Tag to apply to search result summary notes`;
   var SEARCH_USING_AGENT_LABEL = "AI Search Agent";
   var SUGGEST_TASKS_LABEL = "Suggest tasks";
   var PLUGIN_NAME = "AmpleAI";
@@ -2222,7 +2240,7 @@ Will be utilized after your preliminary approval`,
     for (let i = 0; i < analyzedCandidates.length; i += MAX_NOTES_PER_RANKING) {
       batches.push(analyzedCandidates.slice(i, i + MAX_NOTES_PER_RANKING));
     }
-    console.log(`[Phase 4] Splitting ${analyzedCandidates.length} candidates into ${batches.length} batches`);
+    console.log(`[Phase 4] ${analyzedCandidates.length > MAX_NOTES_PER_RANKING ? "Split" : "Taking"} ${analyzedCandidates.length} candidates in ${pluralize(batches.length, "batch")} for final scoring`);
     const batchResults = await Promise.all(
       batches.map((batch) => scoreCandidateBatchWithRetry(searchAgent, batch, criteria, userQuery))
     );
@@ -2380,6 +2398,60 @@ Return ONLY valid JSON array:
     }
   }
 
+  // lib/functions/search/generate-summary-note.js
+  async function createSearchSummaryNote(searchAgent, searchResult, userQuery) {
+    const { notes } = searchResult;
+    try {
+      const modelUsed = preferredModel(searchAgent.app, searchAgent.lastModelUsed) || "unknown model";
+      const titlePrompt = `Create a brief, descriptive title (max 40 chars) for a search results note.
+Search query: "${userQuery}"
+Found: ${searchResult.found ? "Yes" : "No"}
+Return ONLY the title text, nothing else.`;
+      const titleBase = await searchAgent.llm(titlePrompt);
+      const now = /* @__PURE__ */ new Date();
+      const noteTitle = `${modelUsed} result: ${titleBase.trim()} (queried ${now.toLocaleDateString()})`;
+      let noteContent = `# Search Results
+
+**Query:**
+ ${userQuery}
+
+`;
+      noteContent += `${searchResult.message}
+
+`;
+      if (notes?.length) {
+        noteContent += `## Matched Notes (${notes.length})
+
+`;
+        noteContent += `| ***Note*** | ***Score (1-10)*** | ***Reasoning*** | ***Tags*** |
+`;
+        noteContent += `| --- | --- | --- | --- |
+`;
+        notes.forEach((note) => {
+          noteContent += `| [${note.name}](${note.url}) | ${note.finalScore?.toFixed(1)} | ${note.reasoning || "N/A"} | ${note.tags && note.tags.length > 0 ? note.tags.join(", ") : "Not found"} |
+`;
+        });
+      } else {
+        noteContent += `## No Results Found
+
+No notes matched the search criteria.
+
+`;
+      }
+      const searchResultTag = searchAgent.summaryNoteTag();
+      const summaryNoteHandle = await searchAgent.app.createNote(noteTitle.trim(), [searchResultTag].filter(Boolean));
+      await searchAgent.app.replaceNoteContent(summaryNoteHandle, noteContent);
+      return {
+        uuid: summaryNoteHandle.uuid,
+        name: noteTitle.trim(),
+        url: noteUrlFromUUID(summaryNoteHandle.uuid)
+      };
+    } catch (error) {
+      console.error("Failed to create search summary note:", error);
+      return null;
+    }
+  }
+
   // lib/functions/search/search-candidate-note.js
   var MAX_LENGTH_REDUCTION = 10;
   var SearchCandidateNote = class {
@@ -2397,9 +2469,12 @@ Return ONLY valid JSON array:
       this.name = name;
       this.tags = tags || [];
       this.updated = updated;
-      this.bodyContent = bodyContent?.slice(0, MAX_CHARACTERS_TO_SEARCH_BODY);
-      this.originalContentLength = bodyContent?.length;
+      this.bodyContent = bodyContent?.slice(0, MAX_CHARACTERS_TO_SEARCH_BODY) || "";
+      this.originalContentLength = bodyContent ? bodyContent.length : 0;
       this.keywordDensityEstimate = 0;
+      this.keywordDensityIncludesTagBoost = false;
+      this.preContentMatchScore = 0;
+      this.scorePerKeyword = {};
       this.tagBoost = 0;
       this.checks = {};
       this.finalScore = 0;
@@ -2429,7 +2504,6 @@ Return ONLY valid JSON array:
     //   - updated {string} - ISO timestamp of last note update
     //   Expected methods:
     //   - content() {Promise<string>} - Async method returning the note's markdown content
-    // @param {number} matchCount - Initial match count (default 1)
     // @returns {Promise<SearchCandidateNote>} New instance with fetched and truncated content
     static create(noteHandle) {
       return new SearchCandidateNote(
@@ -2479,12 +2553,8 @@ Return ONLY valid JSON array:
         }
       }
       const lengthReduction = Math.min(this.originalContentLength / KEYWORD_DENSITY_DIVISOR, MAX_LENGTH_REDUCTION);
-      this.keywordDensityEstimate = totalPoints - lengthReduction;
-    }
-    // --------------------------------------------------------------------------
-    // Increment the match count for this candidate
-    incrementMatchCount(amount = 1) {
-      this.matchCount += amount;
+      this.keywordDensityIncludesTagBoost = Number.isFinite(this.tagBoost) && this.tagBoost > 0;
+      this.keywordDensityEstimate = this.tagBoost + totalPoints - lengthReduction;
     }
     // --------------------------------------------------------------------------
     // Set the body content and original content length from the provided content string.
@@ -2496,11 +2566,81 @@ Return ONLY valid JSON array:
       this.bodyContent = content ? content.slice(0, MAX_CHARACTERS_TO_SEARCH_BODY) : "";
     }
     // --------------------------------------------------------------------------
+    // Ensure pre-content scores are calculated for the given keywords.
+    // For each keyword, if a score doesn't already exist in scorePerKeyword,
+    // calculates and stores the score based on matches in note name and tags.
+    // Updates preContentMatchScore after processing all keywords.
+    //
+    // @param {boolean} isPrimary - Whether these are primary keywords (higher weight)
+    // @param {Array<string>} keywords - Keywords to ensure scores for
+    ensureKeywordPreContentScores(isPrimary, keywords) {
+      const nameLower = (this.name || "").toLowerCase();
+      for (const keyword of keywords) {
+        const keywordLower = keyword.toLowerCase();
+        if (this.scorePerKeyword[keywordLower] !== void 0)
+          continue;
+        const nameMatchScore = scoreFromNameMatch(keywordLower, nameLower, isPrimary);
+        const tagMatchScore = scoreFromTagMatches(keywordLower, this.tags, isPrimary);
+        const totalScore = Math.min(nameMatchScore + tagMatchScore, PRE_CONTENT_MAX_SCORE_PER_KEYWORD);
+        this.scorePerKeyword[keywordLower] = totalScore;
+      }
+      this.preContentMatchScore = Object.values(this.scorePerKeyword).reduce((sum, s) => sum + s, 0);
+    }
+    // --------------------------------------------------------------------------
     // Set the tag boost multiplier
     setTagBoost(boost) {
       this.tagBoost = boost;
+      if (Number.isFinite(boost) && boost > 0 && !this.keywordDensityIncludesTagBoost) {
+        this.keywordDensityEstimate += boost;
+        this.keywordDensityIncludesTagBoost = true;
+      }
     }
   };
+  function scoreFromNameMatch(keywordLower, nameLower, isPrimary) {
+    if (!keywordLower || !nameLower)
+      return 0;
+    const matchIndex = nameLower.indexOf(keywordLower);
+    if (matchIndex === -1)
+      return 0;
+    const matchLength = keywordLower.length;
+    let rawScore = matchLength * (0.02 * matchLength + 0.1);
+    const minScore = isPrimary ? PRE_CONTENT_MIN_PRIMARY_SCORE : PRE_CONTENT_MIN_SECONDARY_SCORE;
+    rawScore = Math.max(rawScore, minScore);
+    rawScore = Math.min(rawScore, PRE_CONTENT_MAX_SCORE_PER_KEYWORD);
+    if (!isPrimary) {
+      rawScore = rawScore * PRE_CONTENT_SECONDARY_MULTIPLIER;
+    }
+    return rawScore;
+  }
+  function scoreFromTagMatches(keywordLower, tags, isPrimary) {
+    if (!keywordLower || !tags || !tags.length)
+      return 0;
+    let totalScore = 0;
+    const minMatchLengthForWordScore = 4;
+    for (const hierarchicalTagString of tags) {
+      const normalizedTag = hierarchicalTagString.replace(/[/\-]/g, " ");
+      if (normalizedTag.includes(keywordLower)) {
+        const matchLength = keywordLower.length;
+        let rawScore = matchLength * (0.02 * matchLength + 0.1);
+        const minScore = isPrimary ? PRE_CONTENT_MIN_PRIMARY_SCORE : PRE_CONTENT_MIN_SECONDARY_SCORE;
+        rawScore = Math.max(rawScore, minScore);
+        rawScore = Math.min(rawScore, PRE_CONTENT_MAX_SCORE_PER_KEYWORD);
+        if (!isPrimary) {
+          rawScore = rawScore * PRE_CONTENT_SECONDARY_MULTIPLIER;
+        }
+        totalScore += rawScore;
+        continue;
+      }
+      const tagHierarchyParts = hierarchicalTagString.split("/");
+      for (const tagHierarchyPart of tagHierarchyParts) {
+        if (tagHierarchyPart.startsWith(keywordLower)) {
+          const wordScore = isPrimary ? PRE_CONTENT_TAG_WORD_PRIMARY_SCORE : PRE_CONTENT_TAG_WORD_SECONDARY_SCORE;
+          totalScore += wordScore;
+        }
+      }
+    }
+    return totalScore;
+  }
   function countMatches(text, keyword) {
     if (!text || !keyword)
       return 0;
@@ -2555,9 +2695,14 @@ Return ONLY valid JSON array:
   // lib/functions/search/phase2-candidate-collection.js
   async function phase2_collectCandidates(searchAgent, criteria) {
     const startAt = /* @__PURE__ */ new Date();
-    searchAgent.emitProgress("Phase 2: Filtering candidates...");
     const { dateFilter, primaryKeywords, resultCount, secondaryKeywords, tagRequirement } = criteria;
-    let candidates = await searchNotesByStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement);
+    searchAgent.emitProgress(`Phase 2: Now gathering result candidates from ${pluralize(primaryKeywords?.length || 0, "primary keyword")} and ${pluralize(secondaryKeywords.length || 0, "secondary keyword")}...`);
+    let candidates;
+    if (primaryKeywords.length) {
+      candidates = await executeSearchStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement);
+    } else {
+      return [];
+    }
     if (dateFilter) {
       const dateField = dateFilter.type === "created" ? "created" : "updated";
       const afterDate = new Date(dateFilter.after);
@@ -2583,31 +2728,42 @@ Return ONLY valid JSON array:
     searchAgent.emitProgress(`Found ${candidates.length} candidate notes in ${Math.round((/* @__PURE__ */ new Date() - startAt) / 100) / 10}s`);
     return candidates;
   }
-  async function addMatchesFromFilterNotes(searchAgent, candidatesByUuid, queries, tagRequirement) {
+  async function addMatchesFromFilterNotes(candidatesByUuid, isPrimary, queries, searchAgent, tagRequirement) {
     let notesFound = [];
+    const requiredTags = requiredTagsFromTagRequirement(tagRequirement);
+    const tagFilter = requiredTags.length === 1 ? requiredTags[0] : null;
     for (let i = 0; i < queries.length; i += MAX_SEARCH_CONCURRENCY) {
       const batch = queries.slice(i, i + MAX_SEARCH_CONCURRENCY);
       const batchResults = await Promise.all(
         batch.map(async (queryCombo) => {
           const query = queryStringFromCombination(queryCombo);
-          const requiredTags = requiredTagsFromTagRequirement(tagRequirement);
-          const tagFilter = requiredTags.length === 1 ? requiredTags[0] : null;
-          const results = await searchAgent.app.filterNotes({ query, tag: tagFilter });
+          let results;
+          if (tagFilter) {
+            results = await searchAgent.app.filterNotes({ query, tag: tagFilter });
+          } else {
+            results = await searchAgent.app.filterNotes({ query });
+          }
+          results = eligibleNotesFromResults(results, searchAgent);
           if (results.length)
             notesFound = notesFound.concat(results);
-          return uniqueUuidNoteCandidatesFromNotes(results);
+          return { notes: uniqueUuidNoteCandidatesFromNotes(results), queryKeywords: queryCombo };
         })
       );
-      for (const perQueryNotes of batchResults) {
+      for (const { notes: perQueryNotes, queryKeywords } of batchResults) {
         for (const noteHandle of perQueryNotes) {
-          upsertCandidate(candidatesByUuid, noteHandle);
+          upsertCandidate(candidatesByUuid, isPrimary, noteHandle, queryKeywords);
         }
       }
     }
     const uniqueNotes = notesFound.filter((n, i) => notesFound.indexOf(n) === i);
-    console.log(`[filterNotes] Filtering note titles from`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes.map((n) => debugData(n)));
+    console.log(
+      `[filterNotes] Filtering note titles from`,
+      queries.map((q) => q.join(" ")),
+      `with tagFilter "${tagFilter || "(unspecified)"}" found ${uniqueNotes.length} unique note(s)`,
+      uniqueNotes.map((n) => debugData(n))
+    );
   }
-  async function addMatchesFromSearchNotes(searchAgent, candidatesByUuid, queries) {
+  async function addMatchesFromSearchNotes(candidatesByUuid, isPrimary, queries, searchAgent) {
     let notesFound = [];
     for (let i = 0; i < queries.length; i += MAX_SEARCH_CONCURRENCY) {
       const batch = queries.slice(i, i + MAX_SEARCH_CONCURRENCY);
@@ -2616,21 +2772,39 @@ Return ONLY valid JSON array:
           const query = queryStringFromCombination(queryCombo);
           let results = await searchAgent.app.searchNotes(query);
           if (!results.length)
-            return [];
+            return { notes: [], queryKeywords: queryCombo };
           results = await filterNotesWithBody(queryCombo, results);
+          results = eligibleNotesFromResults(results, searchAgent);
           if (results.length)
             notesFound = notesFound.concat(results);
-          return uniqueUuidNoteCandidatesFromNotes(results);
+          return { notes: uniqueUuidNoteCandidatesFromNotes(results), queryKeywords: queryCombo };
         })
       );
-      for (const perQueryNotes of batchResults) {
+      for (const { notes: perQueryNotes, queryKeywords } of batchResults) {
         for (const noteHandle of perQueryNotes) {
-          upsertCandidate(candidatesByUuid, noteHandle);
+          upsertCandidate(candidatesByUuid, isPrimary, noteHandle, queryKeywords);
         }
       }
     }
     const uniqueNotes = notesFound.filter((n, i) => notesFound.indexOf(n) === i);
     console.log(`[searchNotes] Searching note bodies with`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes.map((n) => debugData(n)));
+  }
+  function eligibleNotesFromResults(notes, searchAgent) {
+    let filtered = notes || [];
+    const summaryNoteTagToExclude = searchAgent.summaryNoteTag();
+    if (summaryNoteTagToExclude) {
+      filtered = filtered.filter((note) => {
+        if (!note.tags)
+          return true;
+        return !note.tags.some(
+          (tag) => tag === summaryNoteTagToExclude || tag.startsWith(summaryNoteTagToExclude + "/")
+        );
+      });
+    }
+    if (filtered.length > MAX_NOTES_PER_QUERY) {
+      filtered = filtered.slice(0, MAX_NOTES_PER_QUERY);
+    }
+    return filtered;
   }
   async function executeSearchStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement) {
     if (!primaryKeywords?.length)
@@ -2653,29 +2827,37 @@ Return ONLY valid JSON array:
       secondaryQueries = secondaryKeywordsForQuerying.map((keyword) => [keyword]);
     }
     const candidatesByUuid = /* @__PURE__ */ new Map();
-    await addMatchesFromFilterNotes(searchAgent, candidatesByUuid, primaryQueries, tagRequirement);
+    await addMatchesFromFilterNotes(candidatesByUuid, true, primaryQueries, searchAgent, tagRequirement);
     if (candidatesByUuid.size < minTargetResults && secondaryQueries.length) {
       console.log(`[${strategyName}] Below minimum target (${minTargetResults}), broadening filterNotes with secondary keywords`);
-      await addMatchesFromFilterNotes(searchAgent, candidatesByUuid, secondaryQueries, tagRequirement);
+      await addMatchesFromFilterNotes(candidatesByUuid, false, secondaryQueries, searchAgent, tagRequirement);
     }
     if (candidatesByUuid.size < minFilterNotesResults) {
       console.log(`[${strategyName}] Too few candidates (${candidatesByUuid.size}) below minimum (${minFilterNotesResults}), supplementing with app.searchNotes`);
-      await addMatchesFromSearchNotes(searchAgent, candidatesByUuid, primaryQueries);
+      await addMatchesFromSearchNotes(candidatesByUuid, true, primaryQueries, searchAgent);
       if (candidatesByUuid.size < minFilterNotesResults && secondaryQueries.length) {
         console.log(`[${strategyName}] Searching ${secondaryQueries.length} secondary queries with app.searchNotes since we only located ${candidatesByUuid.size} candidates so far`);
-        await addMatchesFromSearchNotes(searchAgent, candidatesByUuid, secondaryQueries);
+        await addMatchesFromSearchNotes(candidatesByUuid, false, secondaryQueries, searchAgent);
       }
     } else {
       console.log(`[${strategyName}] Searched ${primaryQueries.length} primary filterNotes queries: ${candidatesByUuid.size} unique candidates`);
     }
-    const candidates = Array.from(candidatesByUuid.values());
-    const densityPromises = candidates.map(async (candidate) => {
-      const content = await searchAgent.app.getNoteContent({ uuid: candidate.uuid });
-      candidate.setBodyContent(content);
-      candidate.calculateKeywordDensityEstimate(primaryKeywords, secondaryKeywords);
+    const allCandidates = Array.from(candidatesByUuid.values());
+    const sortedByPreContentScore = allCandidates.sort((a, b) => b.preContentMatchScore - a.preContentMatchScore).slice(0, MAX_CANDIDATES_FOR_DENSITY_CALCULATION);
+    if (allCandidates.length > sortedByPreContentScore.length) {
+      console.log(`[${strategyName}] Limiting from ${allCandidates.length} to ${sortedByPreContentScore.length} candidates for density calculation (top preContentMatchScore). Cutoff note was`, sortedByPreContentScore[sortedByPreContentScore.length - 1]);
+    }
+    const densityPromises = sortedByPreContentScore.map(async (candidate) => {
+      try {
+        const content = await searchAgent.app.getNoteContent({ uuid: candidate.uuid });
+        candidate.setBodyContent(content);
+        candidate.calculateKeywordDensityEstimate(primaryKeywords, secondaryKeywords);
+      } catch (error) {
+        candidate.calculateKeywordDensityEstimate(primaryKeywords, secondaryKeywords);
+      }
     });
     await Promise.all(densityPromises);
-    const finalResults = candidates.sort((a, b) => {
+    const finalResults = sortedByPreContentScore.sort((a, b) => {
       const densityDiff = (b.keywordDensityEstimate || 0) - (a.keywordDensityEstimate || 0);
       if (densityDiff !== 0)
         return densityDiff;
@@ -2703,11 +2885,6 @@ Return ONLY valid JSON array:
   function queryStringFromCombination(query) {
     return (query || []).join(" ").trim();
   }
-  async function searchNotesByStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement) {
-    if (primaryKeywords.length === 0)
-      return [];
-    return await executeSearchStrategy(primaryKeywords, resultCount, searchAgent, secondaryKeywords, tagRequirement);
-  }
   function uniqueUuidNoteCandidatesFromNotes(notes) {
     const seen = /* @__PURE__ */ new Set();
     const unique = [];
@@ -2721,12 +2898,13 @@ Return ONLY valid JSON array:
     }
     return unique;
   }
-  async function upsertCandidate(candidatesByUuid, noteHandle) {
-    const existing = candidatesByUuid.get(noteHandle.uuid);
-    if (existing)
-      return;
-    const candidate = SearchCandidateNote.create(noteHandle);
-    candidatesByUuid.set(noteHandle.uuid, candidate);
+  function upsertCandidate(candidatesByUuid, isPrimary, noteHandle, queryKeywords) {
+    let candidate = candidatesByUuid.get(noteHandle.uuid);
+    if (!candidate) {
+      candidate = SearchCandidateNote.create(noteHandle);
+      candidatesByUuid.set(noteHandle.uuid, candidate);
+    }
+    candidate.ensureKeywordPreContentScores(isPrimary, queryKeywords);
   }
   function wordsFromMultiWordKeywords(keywords) {
     const allWords = [];
@@ -3001,7 +3179,7 @@ Return ONLY valid JSON:
 }
 `;
     const validateCriteria = (result) => {
-      return result?.primaryKeywords && Array.isArray(result.primaryKeywords) && result.primaryKeywords.length > 0;
+      return result?.primaryKeywords && Array.isArray(result.primaryKeywords) && result.primaryKeywords.length;
     };
     const extracted = await searchAgent.llmWithRetry(analysisPrompt, validateCriteria, { jsonResponse: true });
     console.log("Extracted criteria:", extracted);
@@ -3015,6 +3193,7 @@ Return ONLY valid JSON:
   }
 
   // lib/functions/search-agent.js
+  var MAX_SEARCH_AGENT_LLM_QUERY_RETRIES = 3;
   var SearchAgent = class {
     // --------------------------------------------------------------------------
     constructor(app, plugin2) {
@@ -3068,11 +3247,16 @@ Return ONLY valid JSON:
           rankedNotes = [];
         }
         const finalResult = await phase5_sanityCheck(this, rankedNotes, searchCriteria, userQuery);
-        const summaryNote = await this.createSearchSummaryNote(userQuery, finalResult);
-        finalResult.summaryNote = summaryNote;
+        this.emitProgress(`Creating search summary note for ${pluralize(finalResult.notes.length, "result")}...`);
+        const summaryNote = await createSearchSummaryNote(this, finalResult, userQuery);
+        if (summaryNote) {
+          finalResult.summaryNote = summaryNote;
+          this.emitProgress(`Created search summary note: <a href="${summaryNote.url}">${summaryNote.name}</a>`);
+        }
         return finalResult;
       } catch (error) {
-        console.error("Search agent error:", error);
+        console.error("Caught error during search:", error);
+        this.emitProgress(`Error attempting to retrieve AI search results: "${error}"`);
         return {
           found: false,
           error: error.message,
@@ -3081,29 +3265,12 @@ Return ONLY valid JSON:
       }
     }
     // --------------------------------------------------------------------------
-    // Helper: Query LLM with retry across different models until valid response
-    async llmWithRetry(prompt, validateFn, options = {}) {
-      const models = this._modelsToTryFromPreference();
-      const maxAttempts = Math.min(models.length, 3);
-      for (let i = 0; i < maxAttempts; i++) {
-        const aiModel = models[i];
-        console.log(`LLM attempt ${i + 1} with model ${aiModel}`);
-        try {
-          this.lastModelUsed = aiModel;
-          if (this.plugin)
-            this.plugin.lastModelUsed = aiModel;
-          const result = await this.llm(prompt, { ...options, aiModel });
-          if (validateFn(result)) {
-            console.log("LLM response validated successfully");
-            return result;
-          } else {
-            console.log("LLM response failed validation, retrying...");
-          }
-        } catch (error) {
-          console.error(`LLM attempt ${i + 1} failed:`, error);
-        }
+    emitProgress(message) {
+      if (this.progressCallback) {
+        this.progressCallback(message);
       }
-      throw new Error("Failed to get valid response from LLM after multiple attempts");
+      this.app.openEmbed();
+      console.log(`[SearchAgent#emitProgress] ${message}`);
     }
     // --------------------------------------------------------------------------
     // Format the final search result object
@@ -3132,59 +3299,69 @@ Return ONLY valid JSON:
       }
     }
     // --------------------------------------------------------------------------
-    // Create a summary note with search results
-    async createSearchSummaryNote(userQuery, searchResult) {
-      const { notes } = searchResult;
-      this.emitProgress(`Creating search summary note for ${notes.length} result${notes.length === 1 ? "" : "s"}...`);
-      try {
-        const modelUsed = preferredModel(this.app, this.lastModelUsed) || "unknown model";
-        const titlePrompt = `Create a brief, descriptive title (max 40 chars) for a search results note.
-Search query: "${userQuery}"
-Found: ${searchResult.found ? "Yes" : "No"}
-Return ONLY the title text, nothing else.`;
-        const titleBase = await this.llm(titlePrompt);
-        const now = /* @__PURE__ */ new Date();
-        const noteTitle = `${modelUsed} result: ${titleBase.trim()} (queried ${now.toLocaleDateString()})`;
-        let noteContent = `# Search Results
-
-**Query:**
- ${userQuery}
-
-`;
-        noteContent += `${searchResult.message}
-
-`;
-        if (notes?.length) {
-          noteContent += `## Matched Notes (${notes.length})
-
-`;
-          noteContent += `| ***Note*** | ***Score (1-10)*** | ***Reasoning*** | ***Tags*** |
-`;
-          noteContent += `| --- | --- | --- | --- |
-`;
-          notes.forEach((note) => {
-            noteContent += `| [${note.name}](${note.url}) | ${note.finalScore?.toFixed(1)} | ${note.reasoning || "N/A"} | ${note.tags && note.tags.length > 0 ? note.tags.join(", ") : "Not found"} |
-`;
-          });
-        } else {
-          noteContent += `## No Results Found
-
-No notes matched the search criteria.
-
-`;
+    // Handle no results found
+    handleNoResults(criteria) {
+      return {
+        criteria,
+        found: false,
+        message: "No notes found matching your criteria",
+        notes: [],
+        suggestion: "Try removing some filters or using broader search terms"
+      };
+    }
+    // --------------------------------------------------------------------------
+    // Helper: Query LLM with retry across different models until valid response
+    async llmWithRetry(prompt, validateCallback, options = {}) {
+      const models = this._modelsToTryFromPreference();
+      const maxAttempts = Math.min(models.length, MAX_SEARCH_AGENT_LLM_QUERY_RETRIES);
+      for (let i = 0; i < maxAttempts; i++) {
+        const aiModel = models[i];
+        console.log(`LLM attempt ${i + 1} with model ${aiModel}`);
+        try {
+          this.lastModelUsed = aiModel;
+          if (this.plugin)
+            this.plugin.lastModelUsed = aiModel;
+          const result = await this.llm(prompt, { ...options, aiModel });
+          if (validateCallback(result)) {
+            console.log("LLM response successfully passes validation callback");
+            return result;
+          } else {
+            this.emitProgress(`Response from "${aiModel}" failed validation, ${i + 1 < maxAttempts ? "retrying" : "no other available models to try"}...`);
+          }
+        } catch (error) {
+          console.error(`LLM attempt ${i + 1} failed:`, error);
         }
-        const summaryNoteHandle = await this.app.createNote(noteTitle.trim(), ["plugins/ample-ai"]);
-        await this.app.replaceNoteContent(summaryNoteHandle, noteContent);
-        this.emitProgress(`Created search summary note: <a href="${noteUrlFromUUID(summaryNoteHandle.uuid)}">${noteTitle}</a>`);
-        return {
-          uuid: summaryNoteHandle.uuid,
-          name: noteTitle.trim(),
-          url: noteUrlFromUUID(summaryNoteHandle.uuid)
-        };
-      } catch (error) {
-        console.error("Failed to create search summary note:", error);
-        return null;
       }
+      throw new Error("Failed to get valid response from LLM after multiple attempts");
+    }
+    // --------------------------------------------------------------------------
+    // Wrap llmPrompt to always respect SearchAgent's preferred model unless an explicit model is provided.
+    // @param {object} app - Amplenote app object
+    // @param {object} plugin - Plugin instance
+    // @param {string} prompt - Prompt text
+    // @param {object} [options] - Options passed to llmPrompt
+    async _llmWithSearchPreference(prompt, options = {}) {
+      const mergedOptions = { ...options };
+      const aiModelExplicitlyProvided = Object.prototype.hasOwnProperty.call(mergedOptions, "aiModel");
+      if ((!aiModelExplicitlyProvided || !mergedOptions.aiModel) && this.preferredAiModel) {
+        mergedOptions.aiModel = this.preferredAiModel;
+      }
+      const result = await llmPrompt(this.app, this.plugin, prompt, mergedOptions);
+      if (mergedOptions.aiModel) {
+        this.lastModelUsed = mergedOptions.aiModel;
+        if (this.plugin)
+          this.plugin.lastModelUsed = mergedOptions.aiModel;
+      }
+      return result;
+    }
+    // --------------------------------------------------------------------------
+    // @returns {string[]} Ordered LLM model names to try, based on user preference, with the model chosen for search placed in front if available
+    _modelsToTryFromPreference() {
+      const models = preferredModels(this.app) || [];
+      if (!this.preferredAiModel)
+        return models;
+      const withoutPreferred = models.filter((model) => model !== this.preferredAiModel);
+      return [this.preferredAiModel, ...withoutPreferred];
     }
     // --------------------------------------------------------------------------
     // Retry with broader search criteria
@@ -3220,57 +3397,29 @@ No notes matched the search criteria.
       return Promise.all(results);
     }
     // --------------------------------------------------------------------------
-    // Handle no results found
-    handleNoResults(criteria) {
-      return {
-        found: false,
-        message: "No notes found matching your criteria",
-        criteria,
-        suggestion: "Try removing some filters or using broader search terms"
-      };
-    }
-    // --------------------------------------------------------------------------
-    emitProgress(message) {
-      if (this.progressCallback) {
-        this.progressCallback(message);
-      }
-      this.app.openEmbed();
-      console.log(`[SearchAgent#emitProgress] ${message}`);
-    }
-    // --------------------------------------------------------------------------
-    // Wrap llmPrompt to always respect SearchAgent's preferred model unless an explicit model is provided.
-    // @param {object} app - Amplenote app object
-    // @param {object} plugin - Plugin instance
-    // @param {string} prompt - Prompt text
-    // @param {object} [options] - Options passed to llmPrompt
-    async _llmWithSearchPreference(prompt, options = {}) {
-      const mergedOptions = { ...options };
-      const aiModelExplicitlyProvided = Object.prototype.hasOwnProperty.call(mergedOptions, "aiModel");
-      if ((!aiModelExplicitlyProvided || !mergedOptions.aiModel) && this.preferredAiModel) {
-        mergedOptions.aiModel = this.preferredAiModel;
-      }
-      const result = await llmPrompt(this.app, this.plugin, prompt, mergedOptions);
-      if (mergedOptions.aiModel) {
-        this.lastModelUsed = mergedOptions.aiModel;
-        if (this.plugin)
-          this.plugin.lastModelUsed = mergedOptions.aiModel;
-      }
-      return result;
-    }
-    // --------------------------------------------------------------------------
-    // @returns {string[]} Ordered LLM model names to try, based on user preference, with the model chosen for search placed in front if available
-    _modelsToTryFromPreference() {
-      const models = preferredModels(this.app) || [];
-      if (!this.preferredAiModel)
-        return models;
-      const withoutPreferred = models.filter((model) => model !== this.preferredAiModel);
-      return [this.preferredAiModel, ...withoutPreferred];
-    }
-    // --------------------------------------------------------------------------
     // Persist the user's preferred model choice onto the SearchAgent instance so every phase uses it.
     // @param {string|null} aiModel - AI model name (e.g. "gpt-5.1") or null to clear
     setPreferredAiModel(aiModel) {
       this.preferredAiModel = aiModel;
+    }
+    // --------------------------------------------------------------------------
+    summaryNoteTag() {
+      const userSpecifiedTag = this.app.settings[SEARCH_AGENT_RESULT_TAG_LABEL]?.length;
+      if (userSpecifiedTag) {
+        const normalizedTag = normalizedTagFromTagName(userSpecifiedTag);
+        if (userSpecifiedTag !== normalizedTag) {
+          this.emitProgress(`Adjusting search summary tag input from "${userSpecifiedTag}" to "${normalizedTag}"`);
+          this.app.setSetting(SEARCH_AGENT_RESULT_TAG_LABEL, normalizedTag);
+        }
+        if (["no", "none", "null"].includes(normalizedTag)) {
+          this.emitProgress(`User requested no tag on search summary note ("${normalizedTag}")`);
+          return null;
+        } else {
+          return normalizedTag;
+        }
+      } else {
+        return RESULT_TAG_DEFAULT;
+      }
     }
   };
 
