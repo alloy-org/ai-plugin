@@ -76,7 +76,18 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
 
   // --------------------------------------------------------------------------
   function mockSearchAgent(app) {
-    return { app, emitProgress: () => {}, searchAttempt: ATTEMPT_FIRST_PASS, summaryNoteTag: () => null };
+    return {
+      app,
+      emitProgress: () => {},
+      maxedOutKeywords: new Set(),
+      recordMaxedOutKeywords: function(keywords) {
+        for (const keyword of keywords || []) {
+          this.maxedOutKeywords.add(keyword.toLowerCase());
+        }
+      },
+      searchAttempt: ATTEMPT_FIRST_PASS,
+      summaryNoteTag: () => null,
+    };
   }
 
   it("only uses primaryKeywords + filterNotes when primary filterNotes yields enough candidates", async () => {

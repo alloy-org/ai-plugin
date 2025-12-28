@@ -18,6 +18,12 @@ describe("Candidate evaluation (phase5 pruning)", () => {
       handleNoResults: () => ({ found: false }),
       llm: async () => ({ confident: true }),
       maxRetries: 0,
+      ratedNoteUuids: new Set(),
+      recordRatedNoteUuids: function(uuids) {
+        for (const uuid of uuids || []) {
+          this.ratedNoteUuids.add(uuid);
+        }
+      },
       retryCount: 0,
     };
   }
@@ -71,7 +77,7 @@ describe("Phase 4 timeout handling", () => {
   // --------------------------------------------------------------------------
   // Create a search agent stub with timeout-simulating LLM
   function stubSearchAgentWithTimeoutLlm({ callTracker, progressTracker, timeoutAfterSeconds }) {
-    return {
+    const agent = {
       emitProgress: (message) => {
         if (progressTracker) {
           progressTracker.messages.push(message);
@@ -88,7 +94,14 @@ describe("Phase 4 timeout handling", () => {
           }, timeoutAfterSeconds * 1000);
         });
       },
+      ratedNoteUuids: new Set(),
+      recordRatedNoteUuids: function(uuids) {
+        for (const uuid of uuids || []) {
+          this.ratedNoteUuids.add(uuid);
+        }
+      },
     };
+    return agent;
   }
 
   beforeEach(() => {
