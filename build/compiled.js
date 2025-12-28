@@ -2344,7 +2344,7 @@ Score each candidate note 0-10 on these dimensions:
 5. RECENCY: If the user specified recency requirement, does it meet that? If no user-specified requirement, score 10 for recency within a month of today (${now.toDateString()}), and scale down to 0 for candidates from 12+ months earlier.
 
 Candidates to score:
-${ candidates.map((candidate) => `
+${candidates.map((candidate) => `
 UUID: ${candidate.uuid}
 Title: "${candidate.name}"
 Tags: ${candidate.tags?.join(", ") || "none"}
@@ -3298,7 +3298,7 @@ Return ONLY valid JSON:
         this.progressCallback(message);
       }
       this.app.openEmbed();
-      this.app.context.updateEmbedArgs({ lastSearchAgentMessage: message });
+      this.app.context.updateEmbedArgs = { lastSearchAgentMessage: message };
       console.log(`[SearchAgent#emitProgress] ${message}`);
     }
     // --------------------------------------------------------------------------
@@ -4019,4 +4019,5 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-})();
+  return plugin;
+})()
