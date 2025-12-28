@@ -79,7 +79,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     return { app, emitProgress: () => {}, searchAttempt: ATTEMPT_FIRST_PASS, summaryNoteTag: () => null };
   }
 
-  it("1) only uses primaryKeywords + filterNotes when primary filterNotes yields enough candidates", async () => {
+  it("only uses primaryKeywords + filterNotes when primary filterNotes yields enough candidates", async () => {
     const app = mockApp(allNotes);
     app.searchNotes.mockImplementation(async () => []);
 
@@ -102,7 +102,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     expect(high).toBeDefined();
   });
 
-  it("2) uses primaryKeywords + secondaryKeywords with filterNotes when primary filterNotes yields too few candidates", async () => {
+  it("uses primaryKeywords + secondaryKeywords with filterNotes when primary filterNotes yields too few candidates", async () => {
     const app = mockApp(allNotes);
     app.searchNotes.mockImplementation(async () => []);
 
@@ -131,7 +131,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     expect(high).toBeDefined();
   });
 
-  it("3) uses searchNotes with primaryKeywords when filterNotes yields too few candidates (no secondaryKeywords)", async () => {
+  it("uses searchNotes with primaryKeywords when filterNotes yields too few candidates (no secondaryKeywords)", async () => {
     const app = mockApp(allNotes);
 
     app.filterNotes.mockImplementation(async ({ query }) => {
@@ -156,7 +156,7 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     expect(high).toBeDefined();
   });
 
-  it("4) uses searchNotes with secondaryKeywords when filterNotes + primary searchNotes still yield too few candidates", async () => {
+  it("uses searchNotes with secondaryKeywords when filterNotes + primary searchNotes still yield too few candidates", async () => {
     const app = mockApp(allNotes);
 
     // Keep filterNotes extremely narrow even after secondary -> forces searchNotes.
@@ -185,11 +185,19 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     expect(high).toBeDefined();
   });
 
-  it("5) uses other keywords to fill MIN_PHASE2_TARGET_CANDIDATES when one keyword hits MAX_CANDIDATES_PER_KEYWORD", async () => {
+  it("uses other keywords to fill MIN_PHASE2_TARGET_CANDIDATES when one keyword hits MAX_CANDIDATES_PER_KEYWORD", async () => {
     const app = mockApp(allNotes);
     app.searchNotes.mockImplementation(async () => []);
 
+    // Create 3 high-density notes with multiple keywords in title/body (should rank at top)
+    const highDensityNotes = [
+      mockNote("Project meeting overview", "# Overview\n\nThis document covers all topics.", "high-density-001"),
+      mockNote("Meeting summary report", "# Report\n\nThis includes key points.", "high-density-002"),
+      mockNote("Project summary document", "# Document\n\nComplete details included.", "high-density-003"),
+    ];
+
     // Generate notes for the keyword that will max out (>= MAX_CANDIDATES_PER_KEYWORD)
+    // These only have one keyword each, so should rank lower than high-density notes
     const maxedOutProjectNotes = generateMockNotes("MaxProject", MAX_CANDIDATES_PER_KEYWORD + 10, 700);
 
     // Generate notes for other keywords to fill the remaining slots
@@ -200,10 +208,11 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
 
     app.filterNotes.mockImplementation(async ({ query }) => {
       // First keyword returns more than MAX_CANDIDATES_PER_KEYWORD -> gets capped
-      if (query === "project") return maxedOutProjectNotes;
-      // Other primary keywords return notes to fill the gap
-      if (query === "meeting") return meetingFillNotes;
-      if (query === "summary") return summaryFillNotes;
+      // Include high-density notes with the project query
+      if (query === "project") return [...highDensityNotes.slice(0, 2), ...maxedOutProjectNotes];
+      // Other primary keywords return notes to fill the gap, including remaining high-density notes
+      if (query === "meeting") return [highDensityNotes[0], highDensityNotes[1], ...meetingFillNotes];
+      if (query === "summary") return [highDensityNotes[1], highDensityNotes[2], ...summaryFillNotes];
       return [];
     });
 
@@ -213,9 +222,10 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     // Verify all primary keywords were queried (not just the first one)
     expect(app.filterNotes.mock.calls.map(args => args[0].query)).toEqual(primaryQueries);
 
-    // Verify we have candidates from the capped keyword (should be exactly MAX_CANDIDATES_PER_KEYWORD)
+    // Verify candidates from the capped keyword (MAX_CANDIDATES_PER_KEYWORD minus high-density notes in that query)
     const projectCandidates = candidates.filter(n => n.uuid.startsWith("maxproject-"));
-    expect(projectCandidates.length).toBe(MAX_CANDIDATES_PER_KEYWORD);
+    const highDensityInProjectQuery = 2; // highDensityNotes[0] and [1] are included in project query
+    expect(projectCandidates.length).toBe(MAX_CANDIDATES_PER_KEYWORD - highDensityInProjectQuery);
 
     // Verify we have candidates from the other keywords that filled the remaining slots
     const meetingCandidates = candidates.filter(n => n.uuid.startsWith("meetingfill-"));
@@ -225,5 +235,13 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
 
     // Verify total candidates meets or exceeds MIN_PHASE2_TARGET_CANDIDATES
     expect(candidates.length).toBeGreaterThanOrEqual(MIN_PHASE2_TARGET_CANDIDATES);
+
+    // Verify top 3 candidates each have at least 2 keywords present (due to keywordDensity sorting)
+    const top3 = candidates.slice(0, 3);
+    for (const candidate of top3) {
+      const candidateText = `${ candidate.name } ${ candidate.bodyContent || "" }`.toLowerCase();
+      const keywordsPresent = primaryKeywords.filter(keyword => candidateText.includes(keyword.toLowerCase()));
+      expect(keywordsPresent.length).toBeGreaterThanOrEqual(2);
+    }
   });
 });
