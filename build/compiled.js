@@ -2439,18 +2439,10 @@ Found: ${searchResult.found ? "Yes" : "No"}
 Return ONLY the title text, nothing else.`;
       const titleBase = await searchAgent.llm(titlePrompt);
       const now = /* @__PURE__ */ new Date();
-      const noteTitle = `${modelUsed} result: ${titleBase.trim()} (queried ${now.toLocaleDateString()})`;
-      let noteContent = `# Search Results
-
-**Query:**
- ${userQuery}
-
-`;
-      noteContent += `${searchResult.message}
-
-`;
+      const noteTitle = `${titleBase.trim()} (${modelUsed} queried at ${now.toLocaleDateString()})`;
+      let noteContent = "";
       if (notes?.length) {
-        noteContent += `## Matched Notes (${notes.length})
+        noteContent += `# Matched Notes (${notes.length === searchResult.maxResultCount ? "top " : ""}${pluralize(notes.length, "result")})
 
 `;
         noteContent += `| ***Note*** | ***Score (1-10)*** | ***Reasoning*** | ***Tags*** |
@@ -2468,6 +2460,18 @@ No notes matched the search criteria.
 
 `;
       }
+      noteContent += `
+
+
+# Search Inputs
+
+**Query:**
+ "${userQuery}"
+
+`;
+      noteContent += `**Result summary:** ${searchResult.resultSummary}
+
+`;
       const searchResultTag = searchAgent.summaryNoteTag();
       const localUuid = await searchAgent.app.createNote(noteTitle.trim(), [searchResultTag].filter(Boolean));
       const summaryNoteHandle = await searchAgent.app.findNote(localUuid);
@@ -3335,7 +3339,7 @@ Return ONLY valid JSON:
     // @param {boolean} found - Whether a conclusive match was found
     // @param {Array<SearchCandidateNote>} rankedNotes - Array of ranked SearchCandidateNote instances
     // @param {number} resultCount - Number of results requested
-    // @returns {Object} Result object with confidence, found status, message, and notes array
+    // @returns {Object} Result object with confidence, found status, resultSummary, and notes array
     formatResult(found, rankedNotes, resultCount) {
       const bestMatch = rankedNotes[0];
       const noteResults = rankedNotes.slice(0, resultCount);
@@ -3343,15 +3347,17 @@ Return ONLY valid JSON:
         return {
           confidence: bestMatch.finalScore,
           found,
-          message: `Found ${pluralize(noteResults.length, "note")}${found ? " matching" : ", none that quite match"} your criteria`,
-          notes: noteResults
+          maxResultCount: resultCount,
+          notes: noteResults,
+          resultSummary: `Found ${pluralize(rankedNotes.length, "note")}${found ? " matching" : ", none that quite match"} your criteria${rankedNotes.length > resultCount ? ` (showing top ${resultCount}, given your input criteria)` : ""}.`
         };
       } else {
         return {
           confidence: 0,
           found,
-          message: "Could not find any notes matching your criteria",
-          notes: []
+          maxResultCount: resultCount,
+          notes: [],
+          resultSummary: "Could not find any notes matching your criteria"
         };
       }
     }
@@ -3361,8 +3367,9 @@ Return ONLY valid JSON:
       return {
         criteria,
         found: false,
-        message: "No notes found matching your criteria",
+        maxResultCount: criteria.resultCount,
         notes: [],
+        resultSummary: "No notes found matching your criteria",
         suggestion: "Try removing some filters or using broader search terms"
       };
     }
