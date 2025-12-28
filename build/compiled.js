@@ -452,19 +452,19 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var MAX_PHASE4_TIMEOUT_RETRIES = 3;
   var MAX_CHARACTERS_TO_SEARCH_BODY = 4e3;
   var MAX_NOTES_PER_QUERY = 100;
+  var MAX_CANDIDATES_PER_KEYWORD = 30;
+  var MAX_DEEP_ANALYZED_NOTES = 30;
+  var MAX_SEARCH_CONCURRENCY = 10;
+  var MAX_SECONDARY_KEYWORDS_TO_QUERY = 15;
+  var MIN_KEEP_RESULT_SCORE = 5;
+  var MIN_PHASE2_TARGET_CANDIDATES = 50;
+  var PHASE4_TIMEOUT_SECONDS = 60;
   var PRE_CONTENT_MAX_SCORE_PER_KEYWORD = 10;
   var PRE_CONTENT_MIN_PRIMARY_SCORE = 0.5;
   var PRE_CONTENT_MIN_SECONDARY_SCORE = 0.2;
   var PRE_CONTENT_SECONDARY_MULTIPLIER = 0.5;
   var PRE_CONTENT_TAG_WORD_PRIMARY_SCORE = 0.2;
   var PRE_CONTENT_TAG_WORD_SECONDARY_SCORE = 0.1;
-  var MAX_RESULTS_RETURNED = 30;
-  var MAX_SEARCH_CONCURRENCY = 10;
-  var MAX_SECONDARY_KEYWORDS_TO_QUERY = 15;
-  var MIN_FILTER_NOTES_RESULTS = 10;
-  var MIN_KEEP_RESULT_SCORE = 5;
-  var PHASE4_TIMEOUT_SECONDS = 60;
-  var MIN_TARGET_RESULTS = 10;
   var RANK_MATCH_COUNT_CAP = 10;
   var RESULT_TAG_DEFAULT = "plugins/ample-ai/search-results";
 
@@ -1161,7 +1161,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
       return null;
     }
   }
-  async function llmPrompt(app, plugin2, prompt, { aiModel = null, concurrency = 1, jsonResponse = false } = {}) {
+  async function llmPrompt(app, plugin2, prompt, { aiModel = null, concurrency = 1, jsonResponse = false, timeoutSeconds = null } = {}) {
     let modelCandidates = preferredModels(app);
     if (aiModel) {
       modelCandidates = modelCandidates.filter((m) => m !== aiModel);
@@ -1169,7 +1169,8 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     }
     const modelToUse = modelCandidates.shift();
     const messages = [{ role: "user", content: prompt }];
-    const fetchResponse = await makeRequest(app, messages, modelToUse);
+    const requestOptions = timeoutSeconds ? { timeoutSeconds } : {};
+    const fetchResponse = await makeRequest(app, messages, modelToUse, requestOptions);
     const promptKey = jsonResponse ? "llmPromptJson" : null;
     const response = await responseFromStreamOrChunk(app, fetchResponse, modelToUse, promptKey, null, null);
     if (response && jsonResponse) {
@@ -2237,12 +2238,13 @@ Will be utilized after your preliminary approval`,
   var MAX_NOTES_PER_RANKING = 10;
   var MIN_ACCEPT_SCORE = 8;
   async function phase4_scoreAndRank(searchAgent, analyzedCandidates, criteria, userQuery) {
-    searchAgent.emitProgress(`Phase 4: Ranking ${pluralize(analyzedCandidates.length, "result")}...`);
+    const candidatesToAnalyze = analyzedCandidates.slice(0, MAX_DEEP_ANALYZED_NOTES);
+    searchAgent.emitProgress(`Phase 4: Ranking ${pluralize(candidatesToAnalyze.length, "result")}...`);
     const batches = [];
-    for (let i = 0; i < analyzedCandidates.length; i += MAX_NOTES_PER_RANKING) {
-      batches.push(analyzedCandidates.slice(i, i + MAX_NOTES_PER_RANKING));
+    for (let i = 0; i < candidatesToAnalyze.length; i += MAX_NOTES_PER_RANKING) {
+      batches.push(candidatesToAnalyze.slice(i, i + MAX_NOTES_PER_RANKING));
     }
-    console.log(`[Phase 4] ${analyzedCandidates.length > MAX_NOTES_PER_RANKING ? "Split" : "Taking"} ${analyzedCandidates.length} candidates in ${pluralize(batches.length, "batch")} for final scoring`);
+    console.log(`[Phase 4] ${candidatesToAnalyze.length > MAX_NOTES_PER_RANKING ? "Split" : "Taking"} ${candidatesToAnalyze.length} candidates in ${pluralize(batches.length, "batch")} for final scoring`);
     const batchResults = await Promise.all(
       batches.map((batch) => scoreCandidateBatchWithRetry(searchAgent, batch, criteria, userQuery))
     );
@@ -2467,7 +2469,9 @@ No notes matched the search criteria.
 `;
       }
       const searchResultTag = searchAgent.summaryNoteTag();
-      const summaryNoteHandle = await searchAgent.app.createNote(noteTitle.trim(), [searchResultTag].filter(Boolean));
+      const localUuid = await searchAgent.app.createNote(noteTitle.trim(), [searchResultTag].filter(Boolean));
+      const summaryNoteHandle = await searchAgent.app.findNote(localUuid);
+      console.log(`Created ${localUuid} which translates to`, summaryNoteHandle);
       await searchAgent.app.replaceNoteContent(summaryNoteHandle, noteContent);
       return {
         uuid: summaryNoteHandle.uuid,
@@ -2756,41 +2760,6 @@ No notes matched the search criteria.
     searchAgent.emitProgress(`Found ${candidates.length} candidate notes in ${Math.round((/* @__PURE__ */ new Date() - startAt) / 100) / 10}s`);
     return candidates;
   }
-  async function addMatchesFromFilterNotes(candidatesByUuid, isPrimary, queries, searchAgent, tagRequirement) {
-    let notesFound = [];
-    const requiredTags = requiredTagsFromTagRequirement(tagRequirement);
-    const tagFilter = requiredTags.length === 1 ? requiredTags[0] : null;
-    for (let i = 0; i < queries.length; i += MAX_SEARCH_CONCURRENCY) {
-      const batch = queries.slice(i, i + MAX_SEARCH_CONCURRENCY);
-      const batchResults = await Promise.all(
-        batch.map(async (queryCombo) => {
-          const query = queryStringFromCombination(queryCombo);
-          let results;
-          if (tagFilter) {
-            results = await searchAgent.app.filterNotes({ query, tag: tagFilter });
-          } else {
-            results = await searchAgent.app.filterNotes({ query });
-          }
-          results = eligibleNotesFromResults(results, searchAgent);
-          if (results.length)
-            notesFound = notesFound.concat(results);
-          return { notes: uniqueUuidNoteCandidatesFromNotes(results), queryKeywords: queryCombo };
-        })
-      );
-      for (const { notes: perQueryNotes, queryKeywords } of batchResults) {
-        for (const noteHandle of perQueryNotes) {
-          upsertCandidate(candidatesByUuid, isPrimary, noteHandle, queryKeywords);
-        }
-      }
-    }
-    const uniqueNotes = notesFound.filter((n, i) => notesFound.indexOf(n) === i);
-    console.log(
-      `[filterNotes] Filtering note titles from`,
-      queries.map((q) => q.join(" ")),
-      `with tagFilter "${tagFilter || "(unspecified)"}" found ${uniqueNotes.length} unique note(s)`,
-      uniqueNotes.map((n) => debugData(n))
-    );
-  }
   async function addMatchesFromSearchNotes(candidatesByUuid, isPrimary, queries, searchAgent) {
     let notesFound = [];
     for (let i = 0; i < queries.length; i += MAX_SEARCH_CONCURRENCY) {
@@ -2809,13 +2778,45 @@ No notes matched the search criteria.
         })
       );
       for (const { notes: perQueryNotes, queryKeywords } of batchResults) {
-        for (const noteHandle of perQueryNotes) {
+        const cappedNotes = perQueryNotes.slice(0, MAX_CANDIDATES_PER_KEYWORD);
+        if (perQueryNotes.length > MAX_CANDIDATES_PER_KEYWORD) {
+          console.log(`[searchNotes] Query "${queryKeywords.join(" ")}" returned ${perQueryNotes.length} notes, capping to ${MAX_CANDIDATES_PER_KEYWORD}`);
+        }
+        for (const noteHandle of cappedNotes) {
           upsertCandidate(candidatesByUuid, isPrimary, noteHandle, queryKeywords);
         }
       }
     }
     const uniqueNotes = notesFound.filter((n, i) => notesFound.indexOf(n) === i);
     console.log(`[searchNotes] Searching note bodies with`, queries.map((q) => q.join(" ")), `found ${uniqueNotes.length} unique note(s)`, uniqueNotes.map((n) => debugData(n)));
+  }
+  async function collectCandidatesWithKeywordLimits(candidatesByUuid, isPrimary, keywords, searchAgent, tagRequirement) {
+    const maxedOutKeywords = [];
+    const requiredTags = requiredTagsFromTagRequirement(tagRequirement);
+    const tagFilter = requiredTags.length === 1 ? requiredTags[0] : null;
+    let notesFound = [];
+    for (const keyword of keywords) {
+      let results;
+      if (tagFilter) {
+        results = await searchAgent.app.filterNotes({ query: keyword, tag: tagFilter });
+      } else {
+        results = await searchAgent.app.filterNotes({ query: keyword });
+      }
+      results = eligibleNotesFromResults(results, searchAgent);
+      const resultCount = results.length;
+      if (resultCount >= MAX_CANDIDATES_PER_KEYWORD) {
+        console.log(`Keyword "${keyword}" returned ${resultCount} notes (>= ${MAX_CANDIDATES_PER_KEYWORD}), capping contribution and marking as maxed out`);
+        results = results.slice(0, MAX_CANDIDATES_PER_KEYWORD);
+        maxedOutKeywords.push(keyword);
+      }
+      notesFound = notesFound.concat(results);
+      for (const note of uniqueUuidNoteCandidatesFromNotes(results)) {
+        upsertCandidate(candidatesByUuid, isPrimary, note, [keyword]);
+      }
+    }
+    const uniqueNotes = notesFound.filter((n, i) => notesFound.indexOf(n) === i);
+    console.log(`[filterNotes with limits] Collected ${pluralize(uniqueNotes.length, "unique note")} from ${pluralize(keywords.length, "keyword")}, candidatesByUuid size: ${candidatesByUuid.size}`);
+    return maxedOutKeywords;
   }
   function eligibleNotesFromResults(notes, searchAgent) {
     let filtered = notes || [];
@@ -2838,37 +2839,57 @@ No notes matched the search criteria.
     if (!primaryKeywords?.length)
       return [];
     const strategyName = searchAgent.searchAttempt;
-    const effectiveResultCount = resultCount || 1;
-    const minTargetResults = Math.max(MIN_TARGET_RESULTS, effectiveResultCount);
-    const minFilterNotesResults = Math.max(MIN_FILTER_NOTES_RESULTS, effectiveResultCount);
-    const maxResultsReturned = Math.max(MAX_RESULTS_RETURNED, effectiveResultCount * 2);
-    let primaryQueries;
-    let secondaryQueries;
+    const effectiveResultCount = resultCount || DEFAULT_SEARCH_NOTES_RETURNED;
+    const minTargetResults = Math.max(MIN_PHASE2_TARGET_CANDIDATES, effectiveResultCount);
+    let activePrimaryKeywords;
+    let activeSecondaryKeywords;
     const secondaryKeywordsForQuerying = (secondaryKeywords || []).slice(0, MAX_SECONDARY_KEYWORDS_TO_QUERY);
     if (searchAgent.searchAttempt === ATTEMPT_INDIVIDUAL) {
-      const splitPrimaryWords = wordsFromMultiWordKeywords(primaryKeywords);
-      primaryQueries = splitPrimaryWords.map((word) => [word]);
-      const splitSecondaryWords = wordsFromMultiWordKeywords(secondaryKeywordsForQuerying);
-      secondaryQueries = splitSecondaryWords.map((word) => [word]);
+      activePrimaryKeywords = wordsFromMultiWordKeywords(primaryKeywords);
+      activeSecondaryKeywords = wordsFromMultiWordKeywords(secondaryKeywordsForQuerying);
     } else {
-      primaryQueries = primaryKeywords.map((keyword) => [keyword]);
-      secondaryQueries = secondaryKeywordsForQuerying.map((keyword) => [keyword]);
+      activePrimaryKeywords = [...primaryKeywords];
+      activeSecondaryKeywords = [...secondaryKeywordsForQuerying];
     }
     const candidatesByUuid = /* @__PURE__ */ new Map();
-    await addMatchesFromFilterNotes(candidatesByUuid, true, primaryQueries, searchAgent, tagRequirement);
-    if (candidatesByUuid.size < minTargetResults && secondaryQueries.length) {
-      console.log(`[${strategyName}] Below minimum target (${minTargetResults}), broadening filterNotes with secondary keywords`);
-      await addMatchesFromFilterNotes(candidatesByUuid, false, secondaryQueries, searchAgent, tagRequirement);
+    const primaryMaxedOut = await collectCandidatesWithKeywordLimits(
+      candidatesByUuid,
+      true,
+      activePrimaryKeywords,
+      searchAgent,
+      tagRequirement
+    );
+    activeSecondaryKeywords = filterKeywordsContainingMaxedOut(activeSecondaryKeywords, primaryMaxedOut);
+    let secondaryMaxedOut = [];
+    if (candidatesByUuid.size < minTargetResults && activeSecondaryKeywords.length) {
+      console.log(`[${strategyName}] Below minimum target (${minTargetResults}), broadening filterNotes with ${activeSecondaryKeywords.length} secondary keywords`);
+      secondaryMaxedOut = await collectCandidatesWithKeywordLimits(
+        candidatesByUuid,
+        false,
+        activeSecondaryKeywords,
+        searchAgent,
+        tagRequirement
+      );
     }
-    if (candidatesByUuid.size < minFilterNotesResults) {
-      console.log(`[${strategyName}] Too few candidates (${candidatesByUuid.size}) below minimum (${minFilterNotesResults}), supplementing with app.searchNotes`);
-      await addMatchesFromSearchNotes(candidatesByUuid, true, primaryQueries, searchAgent);
-      if (candidatesByUuid.size < minFilterNotesResults && secondaryQueries.length) {
+    const maxedOutKeywords = [...primaryMaxedOut, ...secondaryMaxedOut];
+    if (maxedOutKeywords.length) {
+      console.log(`[${strategyName}] Keywords that hit contribution limit: ${maxedOutKeywords.join(", ")}`);
+    }
+    const remainingPrimaryKeywords = filterKeywordsContainingMaxedOut(activePrimaryKeywords, maxedOutKeywords);
+    const remainingSecondaryKeywords = filterKeywordsContainingMaxedOut(activeSecondaryKeywords, maxedOutKeywords);
+    const primaryQueries = remainingPrimaryKeywords.map((keyword) => [keyword]);
+    const secondaryQueries = remainingSecondaryKeywords.map((keyword) => [keyword]);
+    if (candidatesByUuid.size < minTargetResults) {
+      console.log(`[${strategyName}] Too few candidates (${candidatesByUuid.size}) below minimum (${minTargetResults}), supplementing with app.searchNotes`);
+      if (primaryQueries.length) {
+        await addMatchesFromSearchNotes(candidatesByUuid, true, primaryQueries, searchAgent);
+      }
+      if (candidatesByUuid.size < minTargetResults && secondaryQueries.length) {
         console.log(`[${strategyName}] Searching ${secondaryQueries.length} secondary queries with app.searchNotes since we only located ${candidatesByUuid.size} candidates so far`);
         await addMatchesFromSearchNotes(candidatesByUuid, false, secondaryQueries, searchAgent);
       }
     } else {
-      console.log(`[${strategyName}] Searched ${primaryQueries.length} primary filterNotes queries: ${candidatesByUuid.size} unique candidates`);
+      console.log(`[${strategyName}] Searched ${remainingPrimaryKeywords.length} primary filterNotes queries: ${candidatesByUuid.size} unique candidates`);
     }
     const allCandidates = Array.from(candidatesByUuid.values());
     const sortedByPreContentScore = allCandidates.sort((a, b) => b.preContentMatchScore - a.preContentMatchScore).slice(0, MAX_CANDIDATES_FOR_DENSITY_CALCULATION);
@@ -2894,7 +2915,15 @@ No notes matched the search criteria.
       return bUpdated - aUpdated;
     });
     console.log(`Calculated keyword density estimates for ${finalResults.length} candidates`, finalResults.map((n) => debugData(n)));
-    return finalResults.slice(0, maxResultsReturned);
+    return finalResults;
+  }
+  function filterKeywordsContainingMaxedOut(keywords, maxedOutKeywords) {
+    if (!maxedOutKeywords || !maxedOutKeywords.length)
+      return keywords;
+    return keywords.filter((keyword) => {
+      const lowerKeyword = keyword.toLowerCase();
+      return !maxedOutKeywords.some((maxed) => lowerKeyword.includes(maxed.toLowerCase()));
+    });
   }
   async function filterNotesWithBody(queryArray, resultNotes) {
     const eligibleNotes = await resultNotes.filter(async (note) => {
@@ -2948,7 +2977,6 @@ No notes matched the search criteria.
   }
 
   // lib/functions/search/phase3-criteria-confirm.js
-  var MAX_DEEP_ANALYZED_NOTES = 30;
   async function phase3_criteriaConfirm(searchAgent, candidates, criteria) {
     searchAgent.emitProgress("Phase 3: Analyzing top candidates...");
     const preliminaryRanked = rankPreliminary(candidates);
