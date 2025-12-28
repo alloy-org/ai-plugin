@@ -1,12 +1,12 @@
 import { jest } from "@jest/globals"
-import { phase4_scoreAndRank, phase5_sanityCheck } from "functions/search/candidate-evaluation.js"
+import { phase4_scoreAndRank, phase5_sanityCheck } from "functions/search/final-evaluation"
 import {
   MAX_PHASE4_TIMEOUT_RETRIES,
   MIN_KEEP_RESULT_SCORE,
   PHASE4_TIMEOUT_SECONDS,
-} from "constants/search-settings.js"
-import SearchCandidateNote from "functions/search/search-candidate-note.js"
-import { noteTimestampFromNow } from "../test-helpers.js"
+} from "constants/search-settings"
+import SearchCandidateNote from "functions/search/search-candidate-note"
+import { noteTimestampFromNow } from "../test-helpers"
 
 describe("Candidate evaluation (phase5 pruning)", () => {
   const baseCriteria = { resultCount: 10 };
