@@ -449,6 +449,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var KEYWORD_TITLE_PRIMARY_WEIGHT = 5;
   var KEYWORD_TITLE_SECONDARY_WEIGHT = 2;
   var MAX_CANDIDATES_FOR_DENSITY_CALCULATION = 100;
+  var MAX_PHASE4_TIMEOUT_RETRIES = 3;
   var MAX_CHARACTERS_TO_SEARCH_BODY = 4e3;
   var MAX_NOTES_PER_QUERY = 100;
   var PRE_CONTENT_MAX_SCORE_PER_KEYWORD = 10;
@@ -462,6 +463,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var MAX_SECONDARY_KEYWORDS_TO_QUERY = 15;
   var MIN_FILTER_NOTES_RESULTS = 10;
   var MIN_KEEP_RESULT_SCORE = 5;
+  var PHASE4_TIMEOUT_SECONDS = 60;
   var MIN_TARGET_RESULTS = 10;
   var RANK_MATCH_COUNT_CAP = 10;
   var RESULT_TAG_DEFAULT = "plugins/ample-ai/search-results";
@@ -2308,6 +2310,12 @@ Or if not confident:
     }
     return searchAgent.formatResult(false, rankedNotes, criteria.resultCount);
   }
+  function isTimeoutError(error) {
+    if (!error || !error.message)
+      return false;
+    const message = error.message.toLowerCase();
+    return message.includes("timeout");
+  }
   function rankedNotesAfterRemovingPoorMatches(rankedNotes) {
     const poorMatchRegex = /poor match/i;
     const filteredRankedNotes = rankedNotes.filter((r) => {
@@ -2336,19 +2344,19 @@ Score each candidate note 0-10 on these dimensions:
 5. RECENCY: If the user specified recency requirement, does it meet that? If no user-specified requirement, score 10 for recency within a month of today (${now.toDateString()}), and scale down to 0 for candidates from 12+ months earlier.
 
 Candidates to score:
-${candidates.map((candidate, index) => `
-${index}. "${candidate.name}"
-   UUID: ${candidate.uuid}
-   Tags: ${candidate.tags?.join(", ") || "none"}
-   Updated: ${candidate.updated}
-   Body Content (ending with $END$): ${candidate.bodyContent.slice(0, LLM_SCORE_BODY_CONTENT_LENGTH)}
+${ candidates.map((candidate) => `
+UUID: ${candidate.uuid}
+Title: "${candidate.name}"
+Tags: ${candidate.tags?.join(", ") || "none"}
+Updated: ${candidate.updated}
+Body Content (ending with $END$): ${candidate.bodyContent.slice(0, LLM_SCORE_BODY_CONTENT_LENGTH)}
 $END$
 `).join("\n\n")}
 
-Return ONLY valid JSON array:
+Return ONLY valid JSON array with one entry per candidate, using the UUID to identify each:
 [
   {
-    "noteIndex": 0,
+    "uuid": "the-candidate-uuid",
     "coherence": 7,
     "titleRelevance": 8,
     "keywordDensity": 7,
@@ -2358,8 +2366,9 @@ Return ONLY valid JSON array:
   }
 ]
 `;
-    const scores = await searchAgent.llm(scoringPrompt, { jsonResponse: true });
+    const scores = await searchAgent.llm(scoringPrompt, { jsonResponse: true, timeoutSeconds: PHASE4_TIMEOUT_SECONDS });
     const scoresArray = Array.isArray(scores) ? scores : [scores];
+    const candidatesByUuid = new Map(candidates.map((candidate) => [candidate.uuid, candidate]));
     const weights = {
       coherence: 0.25,
       keywordDensity: 0.25,
@@ -2373,7 +2382,7 @@ Return ONLY valid JSON array:
         const value = Number(rawValue === void 0 || rawValue === null ? 0 : rawValue);
         return sum + value * weight;
       }, 0);
-      const note = candidates[score.noteIndex];
+      const note = candidatesByUuid.get(score.uuid);
       if (note) {
         score.keywordDensitySignal = Math.round(Math.min(RANK_MATCH_COUNT_CAP, note.keywordDensityEstimate || 1) * 0.2 * 10) / 10;
         const finalScore = weightedLlmScore + score.keywordDensitySignal;
@@ -2385,20 +2394,39 @@ Return ONLY valid JSON array:
     }).filter(Boolean);
   }
   async function scoreCandidateBatchWithRetry(searchAgent, candidates, criteria, userQuery) {
-    try {
-      return await scoreCandidateBatch(searchAgent, candidates, criteria, userQuery);
-    } catch (error) {
-      console.warn("[Phase 4] Batch scoring failed, retrying once...", error);
+    let lastError = null;
+    let lastElapsedSeconds = 0;
+    for (let attempt = 1; attempt <= MAX_PHASE4_TIMEOUT_RETRIES; attempt++) {
+      const attemptStartTime = Date.now();
       try {
         return await scoreCandidateBatch(searchAgent, candidates, criteria, userQuery);
-      } catch (retryError) {
-        console.error("[Phase 4] Batch scoring failed after retry:", retryError);
-        return [];
+      } catch (error) {
+        lastError = error;
+        lastElapsedSeconds = Math.round((Date.now() - attemptStartTime) / 100) / 10;
+        if (isTimeoutError(error)) {
+          searchAgent.emitProgress(`Batch scoring timed out after ${lastElapsedSeconds}s (attempt ${attempt}/${MAX_PHASE4_TIMEOUT_RETRIES})`);
+          if (attempt < MAX_PHASE4_TIMEOUT_RETRIES) {
+            continue;
+          }
+        } else {
+          searchAgent.emitProgress(`Batch scoring failed, retrying once...`);
+          const retryStartTime = Date.now();
+          try {
+            return await scoreCandidateBatch(searchAgent, candidates, criteria, userQuery);
+          } catch (retryError) {
+            const retryElapsedSeconds = Math.round((Date.now() - retryStartTime) / 100) / 10;
+            searchAgent.emitProgress(`Batch scoring failed after ${retryElapsedSeconds}s retry ("${retryError}")`);
+            return [];
+          }
+        }
       }
     }
+    searchAgent.emitProgress(`Batch scoring failed after ${MAX_PHASE4_TIMEOUT_RETRIES} timeout retries, last timeout at ${lastElapsedSeconds}s ("${lastError}")`);
+    return [];
   }
 
   // lib/functions/search/generate-summary-note.js
+  var MAX_SCORE_DISPLAY = 10;
   async function createSearchSummaryNote(searchAgent, searchResult, userQuery) {
     const { notes } = searchResult;
     try {
@@ -2428,7 +2456,7 @@ Return ONLY the title text, nothing else.`;
         noteContent += `| --- | --- | --- | --- |
 `;
         notes.forEach((note) => {
-          noteContent += `| [${note.name}](${note.url}) | ${note.finalScore?.toFixed(1)} | ${note.reasoning || "N/A"} | ${note.tags && note.tags.length > 0 ? note.tags.join(", ") : "Not found"} |
+          noteContent += `| [${note.name}](${note.url}) | ${Math.min(note.finalScore?.toFixed(1), MAX_SCORE_DISPLAY)} | ${note.reasoning || "N/A"} | ${note.tags && note.tags.length > 0 ? note.tags.join(", ") : "Not found"} |
 `;
         });
       } else {
@@ -3270,6 +3298,7 @@ Return ONLY valid JSON:
         this.progressCallback(message);
       }
       this.app.openEmbed();
+      this.app.context.updateEmbedArgs({ lastSearchAgentMessage: message });
       console.log(`[SearchAgent#emitProgress] ${message}`);
     }
     // --------------------------------------------------------------------------
@@ -3584,9 +3613,9 @@ ${taskArray.join("\n")}`);
   }
 
   // lib/render-embed.js
-  function renderPluginEmbed(app, plugin2) {
+  function renderPluginEmbed(app, plugin2, renderArguments) {
     return `
-    <html>
+    <html lang="en">
       <head>
         <style>
           body {
@@ -3601,7 +3630,10 @@ ${taskArray.join("\n")}`);
         </style>
       </head>
       <body>
-        <div class="plugin-embed-container">
+        <div class="plugin-embed-container" 
+          data-args="${typeof renderArguments === "object" ? JSON.stringify(renderArguments) : renderArguments}" 
+          data-rendered-at="${(/* @__PURE__ */ new Date()).toISOString()}"
+        >
           ${plugin2.progressText}
         </div>
       </body>
@@ -3669,6 +3701,7 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
         console.log(`Search criteria received: query="${userQuery}", changedSince=${changedSince}, onlyTags=${onlyTags}, maxNotesCount=${maxNotesCount || `(unspecified, so ${DEFAULT_SEARCH_NOTES_RETURNED})`}, preferredAiModel=${preferredAiModel}`);
         if (!userQuery?.length)
           return;
+        this.progressText = "";
         searchAgent.onProgress((progressText) => {
           this.progressText += `${progressText}<br /><br />`;
         });
@@ -3855,8 +3888,8 @@ ${callCountByModelText}
       }
     },
     // --------------------------------------------------------------------------
-    async renderEmbed(app) {
-      return renderPluginEmbed(app, this);
+    async renderEmbed(app, ...args) {
+      return renderPluginEmbed(app, this, args);
     },
     // --------------------------------------------------------------------------
     // Private methods
@@ -3986,5 +4019,4 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-  return plugin;
-})()
+})();

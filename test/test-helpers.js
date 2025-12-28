@@ -111,6 +111,7 @@ export function mockApp(notes, { plugin = null } = {}) {
       await seedNote.replaceContent(newContent, sectionObject);
     }
   });
+  app.context.updateEmbedArgs = jest.fn();
 
   app.createNote = jest.fn().mockImplementation(async (name, tags = []) => {
     const newNote = mockNote(name, "", `note-created-${ Date.now() }`, { tags });

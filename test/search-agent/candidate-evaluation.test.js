@@ -60,7 +60,7 @@ describe("Candidate evaluation (phase5 pruning)", () => {
 // --------------------------------------------------------------------------
 describe("Phase 4 timeout handling", () => {
   const TEST_TIMEOUT_SECONDS = 11;
-  
+
   // --------------------------------------------------------------------------
   // Create a SearchCandidateNote for scoring
   function createScoringCandidate(uuid, name) {
@@ -80,7 +80,7 @@ describe("Phase 4 timeout handling", () => {
       llm: async (_prompt, options = {}) => {
         const timeoutSeconds = options.timeoutSeconds;
         callTracker.calls.push({ timestamp: Date.now(), timeoutSeconds });
-        
+
         // Simulate waiting for the timeout duration, then throw timeout error
         await new Promise((resolve, reject) => {
           setTimeout(() => {
@@ -114,10 +114,7 @@ describe("Phase 4 timeout handling", () => {
     const criteria = { resultCount: 10 };
 
     const searchAgent = stubSearchAgentWithTimeoutLlm({
-      callTracker,
-      progressTracker,
-      timeoutAfterSeconds: TEST_TIMEOUT_SECONDS
-    });
+      callTracker, progressTracker, timeoutAfterSeconds: TEST_TIMEOUT_SECONDS });
 
     // Start the phase4 scoring (will timeout and retry)
     const resultPromise = phase4_scoreAndRank(searchAgent, candidates, criteria, "test query");
@@ -129,7 +126,7 @@ describe("Phase 4 timeout handling", () => {
 
     // Complete first attempt at TEST_TIMEOUT_SECONDS - triggers retry
     await jest.advanceTimersByTimeAsync(1 * 1000);
-    
+
     // Allow microtasks to process the rejection and start retry
     await jest.advanceTimersByTimeAsync(100);
     expect(callTracker.calls.length).toBe(2);
