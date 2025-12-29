@@ -255,4 +255,58 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
       expect(keywordsPresent.length).toBeGreaterThanOrEqual(2);
     }
   });
+
+  it("prioritizes notes with maxed-out keywords in body even when title only matches a later keyword", async () => {
+    // 5 primary keywords: first 2 will max out, 5th keyword appears in special note's title
+    const fiveKeywords = ["alpha", "beta", "gamma", "delta", "epsilon"];
+
+    // The key note: title matches only 5th keyword, but body contains 1st and 2nd keywords
+    const keyNote = mockNote("Epsilon findings document",
+      "# Research\n\nThis document discusses alpha patterns and beta analysis in depth. The alpha and beta concepts are central.",
+      "key-note-001");
+
+    // Competing notes: title matches 5th keyword but body has NO mention of alpha/beta
+    const competingNotes = [
+      mockNote("Epsilon overview", "# Overview\n\nGeneral epsilon concepts and methods.", "compete-001"),
+      mockNote("Epsilon summary", "# Summary\n\nBrief epsilon introduction.", "compete-002"),
+      mockNote("Epsilon notes", "# Notes\n\nMiscellaneous epsilon observations.", "compete-003"),
+    ];
+
+    // Generate enough notes to max out alpha and beta keywords (titles like "Alpha note 100")
+    const alphaMaxNotes = generateMockNotes("Alpha", MAX_CANDIDATES_PER_KEYWORD + 5, 100);
+    const betaMaxNotes = generateMockNotes("Beta", MAX_CANDIDATES_PER_KEYWORD + 5, 200);
+
+    // Generate notes for remaining keywords to fill candidates
+    const gammaNotes = generateMockNotes("Gamma", 10, 300);
+    const deltaNotes = generateMockNotes("Delta", 10, 400);
+
+    // Default filterNotes/searchNotes implementations search titles/content automatically
+    const allTestNotes = [keyNote, ...competingNotes, ...alphaMaxNotes, ...betaMaxNotes, ...gammaNotes, ...deltaNotes];
+    const app = mockApp(allTestNotes);
+
+    const criteria = { ...baseCriteria, primaryKeywords: fiveKeywords, secondaryKeywords: [] };
+    const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
+
+    // Find key note and competitors in results
+    const keyNoteResult = candidates.find(n => n.uuid === "key-note-001");
+    const competitor1 = candidates.find(n => n.uuid === "compete-001");
+    const competitor2 = candidates.find(n => n.uuid === "compete-002");
+
+    expect(keyNoteResult).toBeDefined();
+    expect(competitor1).toBeDefined();
+    expect(competitor2).toBeDefined();
+
+    // Key assertion: keyNote should rank higher than competitors because its body
+    // contains alpha and beta (even though those keywords maxed out during collection)
+    const keyNoteIndex = candidates.indexOf(keyNoteResult);
+    const competitor1Index = candidates.indexOf(competitor1);
+    const competitor2Index = candidates.indexOf(competitor2);
+
+    expect(keyNoteIndex).toBeLessThan(competitor1Index);
+    expect(keyNoteIndex).toBeLessThan(competitor2Index);
+
+    // Verify keyNote has higher keyword density estimate than competitors
+    expect(keyNoteResult.keywordDensityEstimate).toBeGreaterThan(competitor1.keywordDensityEstimate);
+    expect(keyNoteResult.keywordDensityEstimate).toBeGreaterThan(competitor2.keywordDensityEstimate);
+  });
 });
