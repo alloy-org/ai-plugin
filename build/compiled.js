@@ -2283,7 +2283,7 @@ Will be utilized after your preliminary approval`,
       searchAgent.emitProgress(`[Phase 5] Found ${Math.min(topResult.finalScore, 10)}/10 match, returning up to ${pluralize(criteria.resultCount, "result")} (type ${typeof criteria.resultCount})`);
       return searchAgent.formatResult(true, rankedNotes, criteria.resultCount);
     } else if (warrantsNextAttempt) {
-      return searchAgent.nextSearchAttempt(userQuery, criteria);
+      return searchAgent.nextSearchAttempt(userQuery, criteria, rankedNotes);
     } else if (searchAgent.retryCount === searchAgent.maxRetries) {
       searchAgent.emitProgress(`Search completed with ${pluralize(criteria.resultCount, "final result")}`);
       return searchAgent.formatResult(!!rankedNotes.length, rankedNotes, criteria.resultCount);
@@ -2384,7 +2384,7 @@ Return ONLY valid JSON array with one entry per candidate, using the UUID to ide
     "keywordDensity": 7,
     "tagAlignment": 6,
     "recency": 5,
-    "reasoning": "Brief explanation of why this note matches"
+    "reasoning": "Brief explanation of why this note does or doesn't match. If it does not match, label it 'poor match'."
   }
 ]
 `;
@@ -2489,6 +2489,9 @@ No notes matched the search criteria.
 
 `;
       noteContent += `**Result summary:** ${searchResult.resultSummary}
+
+`;
+      noteContent += `**Search pass count:** ${searchAgent.retryCount + 1}
 
 `;
       noteContent += `**Search criteria:**
