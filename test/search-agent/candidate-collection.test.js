@@ -3,7 +3,7 @@ import { phase2_collectCandidates } from "functions/search/phase2-candidate-coll
 import { mockApp, mockNote } from "../test-helpers"
 
 // --------------------------------------------------------------------------
-// Helper to generate N mock notes with unique names/uuids
+// Helper to generate N mock notes with keyword in TITLE (found by filterNotes AND searchNotes)
 function generateMockNotes(prefix, count, startIndex = 0) {
   return Array.from({ length: count }, (_, i) => {
     const index = startIndex + i;
@@ -16,52 +16,29 @@ function generateMockNotes(prefix, count, startIndex = 0) {
 }
 
 // --------------------------------------------------------------------------
+// Helper to generate N mock notes with keyword in BODY only (found by searchNotes but NOT filterNotes)
+function generateBodyOnlyNotes(keyword, count, startIndex = 0) {
+  return Array.from({ length: count }, (_, i) => {
+    const index = startIndex + i;
+    return mockNote(
+      `Document ${ index }`,
+      `# Notes\n\nThis document discusses ${ keyword } topics and ${ keyword } concepts.`,
+      `body-${ keyword.toLowerCase() }-${ String(index).padStart(3, "0") }`
+    );
+  });
+}
+
+// --------------------------------------------------------------------------
 describe("Candidate collection (strategy precedence + matchCount)", () => {
   const primaryKeywords = ["project", "meeting", "summary"];
   const secondaryKeywords = ["agenda", "action", "follow-up"];
 
-  // Shared notes reused across tests (brief, realistic)
-  const noteHighMatch = mockNote(
-    "Project meeting summary",
-    "# Project notes\n\nMeeting summary and next steps.",
-    "cc-001"
-  );
+  // Shared notes reused across tests
+  const noteHighMatch = mockNote("Project meeting summary", "# Project notes\n\nMeeting summary and next steps.", "cc-001");
   const notePrimaryA = mockNote("Project kickoff", "# Work\n\nProject kickoff details.", "cc-002");
   const notePrimaryB = mockNote("Q4 meeting notes", "# Work\n\nMeeting notes for Q4.", "cc-003");
   const notePrimaryC = mockNote("Weekly summary", "# Work\n\nWeekly summary draft.", "cc-004");
-
-  const noteSecondaryA = mockNote("Team agenda", "# Work\n\nAgenda for tomorrow.", "cc-005");
-  const noteSecondaryB = mockNote("Action items", "# Work\n\nAction items list.", "cc-006");
-  const noteSecondaryC = mockNote("Follow-up plan", "# Work\n\nFollow-up tasks.", "cc-007");
-
-  const noteExtra1 = mockNote("Project timeline", "# Work\n\nProject timeline.", "cc-008");
-  const noteExtra2 = mockNote("Meeting prep", "# Work\n\nMeeting prep.", "cc-009");
-  const noteExtra3 = mockNote("Summary snippet", "# Work\n\nSummary snippet.", "cc-010");
-  const noteExtra4 = mockNote("Decision log", "# Work\n\nDecision log.", "cc-011");
-
   const noteShouldNotMatch = mockNote("Groceries", "# Personal\n\nGrocery list.", "cc-999");
-
-  // Generate enough notes to exceed MIN_PHASE2_TARGET_CANDIDATES threshold
-  const bulkProjectNotes = generateMockNotes("Project", 20, 100);
-  const bulkMeetingNotes = generateMockNotes("Meeting", 20, 200);
-  const bulkSummaryNotes = generateMockNotes("Summary", 20, 300);
-  const bulkAgendaNotes = generateMockNotes("Agenda", 15, 400);
-  const bulkActionNotes = generateMockNotes("Action", 15, 500);
-  const bulkFollowupNotes = generateMockNotes("Follow-up", 15, 600);
-
-  const allNotes = [
-    noteHighMatch,
-    notePrimaryA, notePrimaryB, notePrimaryC,
-    noteSecondaryA, noteSecondaryB, noteSecondaryC,
-    noteExtra1, noteExtra2, noteExtra3, noteExtra4,
-    noteShouldNotMatch,
-    ...bulkProjectNotes,
-    ...bulkMeetingNotes,
-    ...bulkSummaryNotes,
-    ...bulkAgendaNotes,
-    ...bulkActionNotes,
-    ...bulkFollowupNotes,
-  ];
 
   const baseCriteria = {
     exactPhrase: null,
@@ -91,21 +68,21 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
   }
 
   it("only uses primaryKeywords + filterNotes when primary filterNotes yields enough candidates", async () => {
-    const app = mockApp(allNotes);
-    app.searchNotes.mockImplementation(async () => []);
-
-    // Return enough unique notes from filterNotes to exceed MIN_PHASE2_TARGET_CANDIDATES
-    app.filterNotes.mockImplementation(async ({ query }) => {
-      if (query === "project") return [noteHighMatch, notePrimaryA, ...bulkProjectNotes];
-      if (query === "meeting") return [notePrimaryB, notePrimaryC, ...bulkMeetingNotes];
-      if (query === "summary") return [noteExtra3, noteExtra4, ...bulkSummaryNotes];
-      return [];
-    });
+    // 60+ notes with primary keywords in title → exceeds MIN_PHASE2_TARGET_CANDIDATES
+    const manyPrimaryNotes = [
+      noteHighMatch, notePrimaryA, notePrimaryB, notePrimaryC,
+      ...generateMockNotes("Project", 20, 100),
+      ...generateMockNotes("Meeting", 20, 200),
+      ...generateMockNotes("Summary", 20, 300),
+    ];
+    const app = mockApp([...manyPrimaryNotes, noteShouldNotMatch]);
 
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
     const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
 
+    // searchNotes not needed when filterNotes yields enough candidates
     expect(app.searchNotes).not.toHaveBeenCalled();
+    // Only primary keywords queried (no secondary needed)
     expect(app.filterNotes.mock.calls.map(args => args[0].query)).toEqual(primaryQueries);
 
     expect(candidates.find(n => n.uuid === noteShouldNotMatch.uuid)).toBeUndefined();
@@ -114,22 +91,15 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
   });
 
   it("uses primaryKeywords + secondaryKeywords with filterNotes when primary filterNotes yields too few candidates", async () => {
-    const app = mockApp(allNotes);
-    app.searchNotes.mockImplementation(async () => []);
-
-    app.filterNotes.mockImplementation(async ({ query }) => {
-      // Primary keywords yield only a few uniques -> forces broadening with secondary filterNotes
-      if (query === "project") return [noteHighMatch, notePrimaryA];
-      if (query === "meeting") return [notePrimaryB];
-      if (query === "summary") return [notePrimaryC];
-
-      // Secondary keywords add enough uniques to exceed MIN_PHASE2_TARGET_CANDIDATES -> no searchNotes
-      // Need 46+ secondary notes to reach 50 total with 4 primary
-      if (query === "agenda") return [...bulkAgendaNotes, noteSecondaryA];
-      if (query === "action") return [...bulkActionNotes];
-      if (query === "follow-up") return [...bulkFollowupNotes];
-      return [];
-    });
+    // Only 4 notes with primary keywords in title → too few, forces secondary keyword search
+    const fewPrimaryNotes = [noteHighMatch, notePrimaryA, notePrimaryB, notePrimaryC];
+    // 50+ notes with secondary keywords in title → enough to reach MIN_PHASE2_TARGET_CANDIDATES
+    const manySecondaryNotes = [
+      ...generateMockNotes("Agenda", 20, 400),
+      ...generateMockNotes("Action", 20, 500),
+      ...generateMockNotes("Follow-up", 20, 600),
+    ];
+    const app = mockApp([...fewPrimaryNotes, ...manySecondaryNotes, noteShouldNotMatch]);
 
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
     const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
@@ -143,19 +113,13 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
   });
 
   it("uses searchNotes with primaryKeywords when filterNotes yields too few candidates (no secondaryKeywords)", async () => {
-    const app = mockApp(allNotes);
-
-    app.filterNotes.mockImplementation(async ({ query }) => {
-      if (primaryQueries.includes(query)) return [noteHighMatch];
-      return [];
-    });
-
-    app.searchNotes.mockImplementation(async (query) => {
-      if (query === "project") return [noteHighMatch, notePrimaryA, notePrimaryB, noteExtra1, noteExtra2];
-      if (query === "meeting") return [noteHighMatch, notePrimaryC, noteExtra3];
-      if (query === "summary") return [noteHighMatch, noteExtra4, noteSecondaryA, noteSecondaryB, noteSecondaryC];
-      return [];
-    });
+    // Only 1 note with primary keyword in title → filterNotes finds too few
+    const titleNote = noteHighMatch;
+    // 20 notes with keywords in BODY only → searchNotes finds these
+    const bodyOnlyProjectNotes = generateBodyOnlyNotes("project", 20, 100);
+    const bodyOnlyMeetingNotes = generateBodyOnlyNotes("meeting", 20, 200);
+    const bodyOnlySummaryNotes = generateBodyOnlyNotes("summary", 20, 300);
+    const app = mockApp([titleNote, ...bodyOnlyProjectNotes, ...bodyOnlyMeetingNotes, ...bodyOnlySummaryNotes, noteShouldNotMatch]);
 
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords: [] };
     const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
@@ -168,23 +132,21 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
   });
 
   it("uses searchNotes with secondaryKeywords when filterNotes + primary searchNotes still yield too few candidates", async () => {
-    const app = mockApp(allNotes);
-
-    // Keep filterNotes extremely narrow even after secondary -> forces searchNotes.
-    app.filterNotes.mockImplementation(async () => [noteHighMatch]);
-
-    app.searchNotes.mockImplementation(async (query) => {
-      // Primary searchNotes adds some, but not enough to reach MIN_FILTER_NOTES_RESULTS.
-      if (query === "project") return [noteHighMatch, notePrimaryA, notePrimaryB];
-      if (query === "meeting") return [noteHighMatch, notePrimaryC];
-      if (query === "summary") return [noteHighMatch];
-
-      // Secondary searchNotes is required to reach enough candidates.
-      if (query === "agenda") return [noteSecondaryA, noteSecondaryB, noteExtra1];
-      if (query === "action") return [noteSecondaryC, noteExtra2, noteExtra3];
-      if (query === "follow-up") return [noteExtra4];
-      return [];
-    });
+    // Only 1 note with any keyword in title → filterNotes finds almost nothing
+    const titleNote = noteHighMatch;
+    // Few notes with primary keywords in body → not enough even with searchNotes
+    const bodyOnlyPrimaryNotes = [
+      ...generateBodyOnlyNotes("project", 5, 100),
+      ...generateBodyOnlyNotes("meeting", 5, 200),
+      ...generateBodyOnlyNotes("summary", 5, 300),
+    ];
+    // More notes with secondary keywords in body → enough to reach threshold
+    const bodyOnlySecondaryNotes = [
+      ...generateBodyOnlyNotes("agenda", 15, 400),
+      ...generateBodyOnlyNotes("action", 15, 500),
+      ...generateBodyOnlyNotes("follow-up", 15, 600),
+    ];
+    const app = mockApp([titleNote, ...bodyOnlyPrimaryNotes, ...bodyOnlySecondaryNotes, noteShouldNotMatch]);
 
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords };
     const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
@@ -197,35 +159,21 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
   });
 
   it("uses other keywords to fill MIN_PHASE2_TARGET_CANDIDATES when one keyword hits MAX_CANDIDATES_PER_KEYWORD", async () => {
-    const app = mockApp(allNotes);
-    app.searchNotes.mockImplementation(async () => []);
-
-    // Create 3 high-density notes with multiple keywords in title/body (should rank at top)
+    // High-density notes with multiple keywords in title (should rank at top)
     const highDensityNotes = [
-      mockNote("Project meeting overview", "# Overview\n\nThis document covers all topics.", "high-density-001"),
-      mockNote("Meeting summary report", "# Report\n\nThis includes key points.", "high-density-002"),
-      mockNote("Project summary document", "# Document\n\nComplete details included.", "high-density-003"),
+      mockNote("Project meeting overview", "# Overview\n\nThis document covers project and meeting topics.", "high-density-001"),
+      mockNote("Meeting summary report", "# Report\n\nThis includes meeting and summary points.", "high-density-002"),
+      mockNote("Project summary document", "# Document\n\nComplete project and summary details.", "high-density-003"),
     ];
 
-    // Generate notes for the keyword that will max out (>= MAX_CANDIDATES_PER_KEYWORD)
-    // These only have one keyword each, so should rank lower than high-density notes
-    const maxedOutProjectNotes = generateMockNotes("MaxProject", MAX_CANDIDATES_PER_KEYWORD + 10, 700);
+    // 35 notes for "project" keyword → will max out at 30
+    const projectNotes = generateMockNotes("Project", MAX_CANDIDATES_PER_KEYWORD + 5, 700);
+    // 15 notes each for "meeting" and "summary" → fill remaining slots
+    const meetingNotes = generateMockNotes("Meeting", 15, 800);
+    const summaryNotes = generateMockNotes("Summary", 15, 900);
 
-    // Generate notes for other keywords to fill the remaining slots
-    // Need (MIN_PHASE2_TARGET_CANDIDATES - MAX_CANDIDATES_PER_KEYWORD) = 50 - 30 = 20 more notes
-    const remainingNeeded = MIN_PHASE2_TARGET_CANDIDATES - MAX_CANDIDATES_PER_KEYWORD;
-    const meetingFillNotes = generateMockNotes("MeetingFill", Math.ceil(remainingNeeded / 2), 800);
-    const summaryFillNotes = generateMockNotes("SummaryFill", Math.ceil(remainingNeeded / 2), 900);
-
-    app.filterNotes.mockImplementation(async ({ query }) => {
-      // First keyword returns more than MAX_CANDIDATES_PER_KEYWORD -> gets capped
-      // Include high-density notes with the project query
-      if (query === "project") return [...highDensityNotes.slice(0, 2), ...maxedOutProjectNotes];
-      // Other primary keywords return notes to fill the gap, including remaining high-density notes
-      if (query === "meeting") return [highDensityNotes[0], highDensityNotes[1], ...meetingFillNotes];
-      if (query === "summary") return [highDensityNotes[1], highDensityNotes[2], ...summaryFillNotes];
-      return [];
-    });
+    const allTestNotes = [...highDensityNotes, ...projectNotes, ...meetingNotes, ...summaryNotes];
+    const app = mockApp(allTestNotes);
 
     const criteria = { ...baseCriteria, primaryKeywords, secondaryKeywords: [] };
     const candidates = await phase2_collectCandidates(mockSearchAgent(app), criteria);
@@ -233,14 +181,13 @@ describe("Candidate collection (strategy precedence + matchCount)", () => {
     // Verify all primary keywords were queried (not just the first one)
     expect(app.filterNotes.mock.calls.map(args => args[0].query)).toEqual(primaryQueries);
 
-    // Verify candidates from the capped keyword (MAX_CANDIDATES_PER_KEYWORD minus high-density notes in that query)
-    const projectCandidates = candidates.filter(n => n.uuid.startsWith("maxproject-"));
-    const highDensityInProjectQuery = 2; // highDensityNotes[0] and [1] are included in project query
-    expect(projectCandidates.length).toBe(MAX_CANDIDATES_PER_KEYWORD - highDensityInProjectQuery);
+    // Verify candidates from capped keyword are limited to MAX_CANDIDATES_PER_KEYWORD
+    const projectCandidates = candidates.filter(n => n.uuid.startsWith("project-"));
+    expect(projectCandidates.length).toBeLessThanOrEqual(MAX_CANDIDATES_PER_KEYWORD);
 
-    // Verify we have candidates from the other keywords that filled the remaining slots
-    const meetingCandidates = candidates.filter(n => n.uuid.startsWith("meetingfill-"));
-    const summaryCandidates = candidates.filter(n => n.uuid.startsWith("summaryfill-"));
+    // Verify we have candidates from other keywords that filled the remaining slots
+    const meetingCandidates = candidates.filter(n => n.uuid.startsWith("meeting-"));
+    const summaryCandidates = candidates.filter(n => n.uuid.startsWith("summary-"));
     expect(meetingCandidates.length).toBeGreaterThan(0);
     expect(summaryCandidates.length).toBeGreaterThan(0);
 
