@@ -144,8 +144,8 @@ export function mockApp(notes, { plugin = null } = {}) {
       const queryWords = query.toLowerCase().split(/\s+/);
       results = results.filter(note => {
         const nameLower = (note.name || "").toLowerCase();
-        // Match if any query word appears in the title
-        return queryWords.some(word => nameLower.includes(word));
+        // Match only if all query words appear in the title
+        return queryWords.every(word => nameLower.includes(word));
       });
     }
 
