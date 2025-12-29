@@ -2325,9 +2325,10 @@ Or if not confident:
       return searchAgent.formatResult(true, rankedNotes, criteria.resultCount);
     }
     console.log(`Sanity check failed: ${sanityCheck.concerns}`);
-    searchAgent.retryCount++;
     if (sanityCheck.suggestAction === "retry_broader") {
-      return searchAgent.nextSearchAttempt(userQuery, criteria);
+      return searchAgent.nextSearchAttempt(userQuery, criteria, rankedNotes);
+    } else {
+      searchAgent.retryCount++;
     }
     return searchAgent.formatResult(false, rankedNotes, criteria.resultCount);
   }
@@ -3310,7 +3311,10 @@ Return ONLY valid JSON:
   var PROGRESS_PHASE3_COMPLETE = 40;
   var PROGRESS_PHASE4_COMPLETE = 55;
   var PROGRESS_PHASE5_COMPLETE = 100;
+  var PROGRESS_RETRY_RECEIVED_INPUT = 60;
+  var PROGRESS_RETRY_PHASE1_COMPLETE = 65;
   var PROGRESS_RETRY_PHASE2_COMPLETE = 70;
+  var PROGRESS_RETRY_PHASE3_COMPLETE = 75;
   var PROGRESS_RETRY_PHASE4_COMPLETE = 85;
   var SearchAgent = class {
     // --------------------------------------------------------------------------
@@ -3349,18 +3353,22 @@ Return ONLY valid JSON:
     // @returns {Promise<SearchResult>} Search result with found notes, confidence scores, and summary note
     async search(userQuery, { criteria = {}, options = {} } = {}) {
       try {
-        this.emitProgress("Starting search analysis...", PROGRESS_RECEIVED_INPUT);
+        const isRetry = this.retryCount > 0;
+        const receivedInputPercentage = isRetry ? PROGRESS_RETRY_RECEIVED_INPUT : PROGRESS_RECEIVED_INPUT;
+        this.emitProgress("Starting search analysis...", receivedInputPercentage);
         const searchCriteria = Object.keys(criteria).length ? criteria : await phase1_analyzeQuery(this, userQuery, options);
-        this.emitProgress("Query analysis complete", PROGRESS_PHASE1_COMPLETE);
+        const phase1Percentage = isRetry ? PROGRESS_RETRY_PHASE1_COMPLETE : PROGRESS_PHASE1_COMPLETE;
+        this.emitProgress("Query analysis complete", phase1Percentage);
         const candidates = await phase2_collectCandidates(this, searchCriteria);
-        const phase2Percentage = this.retryCount > 0 ? PROGRESS_RETRY_PHASE2_COMPLETE : PROGRESS_PHASE2_COMPLETE;
+        const phase2Percentage = isRetry ? PROGRESS_RETRY_PHASE2_COMPLETE : PROGRESS_PHASE2_COMPLETE;
         this.emitProgress(`Candidate collection complete`, phase2Percentage);
         if (candidates.length === 0) {
           this.emitProgress("No candidates found", PROGRESS_PHASE5_COMPLETE);
           return this.handleNoResults(searchCriteria);
         }
         const { validCandidates, allAnalyzed } = await phase3_criteriaConfirm(this, candidates, searchCriteria);
-        this.emitProgress(`Criteria confirmation complete`, PROGRESS_PHASE3_COMPLETE);
+        const phase3Percentage = isRetry ? PROGRESS_RETRY_PHASE3_COMPLETE : PROGRESS_PHASE3_COMPLETE;
+        this.emitProgress(`Criteria confirmation complete`, phase3Percentage);
         let rankedNotes;
         if (validCandidates.length === 0 && this.retryCount < this.maxRetries) {
           return this.nextSearchAttempt(userQuery, searchCriteria);
@@ -3372,14 +3380,18 @@ Return ONLY valid JSON:
         } else {
           rankedNotes = [];
         }
-        const phase4Percentage = this.retryCount > 0 ? PROGRESS_RETRY_PHASE4_COMPLETE : PROGRESS_PHASE4_COMPLETE;
+        const phase4Percentage = isRetry ? PROGRESS_RETRY_PHASE4_COMPLETE : PROGRESS_PHASE4_COMPLETE;
         this.emitProgress(`Scoring complete`, phase4Percentage);
         const finalResult = await phase5_sanityCheck(this, rankedNotes, searchCriteria, userQuery);
-        this.emitProgress(`Creating search summary note for ${pluralize(finalResult.notes.length, "result")}...`);
-        const summaryNote = await createSearchSummaryNote(this, finalResult, searchCriteria, userQuery);
-        if (summaryNote) {
-          finalResult.summaryNote = summaryNote;
-          this.emitProgress(`Created search summary note: <a href="${summaryNote.url}">${summaryNote.name}</a>`, PROGRESS_PHASE5_COMPLETE);
+        if (!finalResult.summaryNote && !isRetry) {
+          this.emitProgress(`Creating search summary note for ${pluralize(finalResult.notes.length, "result")}...`);
+          const summaryNote = await createSearchSummaryNote(this, finalResult, searchCriteria, userQuery);
+          if (summaryNote) {
+            finalResult.summaryNote = summaryNote;
+            this.emitProgress(`Created search summary note: <a href="${summaryNote.url}">${summaryNote.name}</a>`, PROGRESS_PHASE5_COMPLETE);
+          } else {
+            this.emitProgress(`Search complete`, PROGRESS_PHASE5_COMPLETE);
+          }
         } else {
           this.emitProgress(`Search complete`, PROGRESS_PHASE5_COMPLETE);
         }
@@ -3496,6 +3508,28 @@ Return ONLY valid JSON:
       return result;
     }
     // --------------------------------------------------------------------------
+    // Merge ranked notes from a previous search pass with notes from a retry pass.
+    // Combines both arrays, removes duplicates by UUID, and sorts by finalScore descending.
+    //
+    // @param {Array<SearchCandidateNote>} previousPassNotes - Notes from the previous search pass
+    // @param {Array<SearchCandidateNote>} retryPassNotes - Notes from the retry search pass
+    // @returns {Array<SearchCandidateNote>} Merged and sorted notes array
+    _mergeRankedNotes(previousPassNotes, retryPassNotes) {
+      const notesByUuid = /* @__PURE__ */ new Map();
+      for (const note of previousPassNotes) {
+        notesByUuid.set(note.uuid, note);
+      }
+      for (const note of retryPassNotes) {
+        if (!notesByUuid.has(note.uuid)) {
+          notesByUuid.set(note.uuid, note);
+        }
+      }
+      const mergedNotes = Array.from(notesByUuid.values());
+      mergedNotes.sort((a, b) => b.finalScore - a.finalScore);
+      console.log(`[_mergeRankedNotes] Merged ${previousPassNotes.length} previous pass + ${retryPassNotes.length} retry pass = ${mergedNotes.length} total notes`);
+      return mergedNotes;
+    }
+    // --------------------------------------------------------------------------
     // @returns {string[]} Ordered LLM model names to try, based on user preference, with the model chosen for search placed in front if available
     _modelsToTryFromPreference() {
       const models = preferredModels(this.app) || [];
@@ -3505,15 +3539,24 @@ Return ONLY valid JSON:
       return [this.preferredAiModel, ...withoutPreferred];
     }
     // --------------------------------------------------------------------------
-    // Retry with broader search criteria
-    async nextSearchAttempt(userQuery, criteria) {
+    // Retry with broader search criteria, merging previous pass results into the final result
+    //
+    // @param {string} userQuery - The original search query
+    // @param {UserCriteria} criteria - Search criteria to use for retry
+    // @param {Array<SearchCandidateNote>} previousPassRankedNotes - Ranked notes from the previous pass to merge
+    // @returns {Promise<Object>} Search result with merged notes from both passes
+    async nextSearchAttempt(userQuery, criteria, previousPassRankedNotes = []) {
       this.retryCount++;
       if (this.retryCount === 1) {
         this.searchAttempt = ATTEMPT_INDIVIDUAL;
         console.log("Retrying with individual keyword strategy...");
         this.emitProgress("Retrying with individual keywords...");
       }
-      return this.search(userQuery, { criteria });
+      const retryResult = await this.search(userQuery, { criteria });
+      if (previousPassRankedNotes.length && retryResult.notes) {
+        retryResult.notes = this._mergeRankedNotes(previousPassRankedNotes, retryResult.notes);
+      }
+      return retryResult;
     }
     // --------------------------------------------------------------------------
     onProgress(callback) {
@@ -3757,7 +3800,7 @@ ${taskArray.join("\n")}`);
           body {
             background-color: #fff;
             color: #333;
-            padding: 10px;
+            padding: 10px 15px;
             margin: 0;
           }
           
@@ -4289,4 +4332,5 @@ ${trimmedResponse || aiResponse}`, {
     }
   };
   var plugin_default = plugin;
-})();
+  return plugin;
+})()
