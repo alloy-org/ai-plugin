@@ -5,27 +5,23 @@ import {
   MIN_KEEP_RESULT_SCORE,
   PHASE4_TIMEOUT_SECONDS,
 } from "constants/search-settings"
+import SearchAgent from "functions/search-agent"
 import SearchCandidateNote from "functions/search/search-candidate-note"
-import { noteTimestampFromNow } from "../test-helpers"
+import { mockApp, mockPlugin, noteTimestampFromNow } from "../test-helpers"
 
 describe("Candidate evaluation (phase5 pruning)", () => {
-  const baseCriteria = { resultCount: 10 };
+  // Use resultCount: 2 so that having at least 1 result satisfies "enoughDesiredResults"
+  // (2 * 0.5 = 1) and prevents retry behavior (these tests focus on pruning logic, not retry logic)
+  const baseCriteria = { resultCount: 2 };
 
-  function stubSearchAgent() {
-    return {
-      emitProgress: () => {},
-      formatResult: (_found, notes) => ({ notes }),
-      handleNoResults: () => ({ found: false }),
-      llm: async () => ({ confident: true }),
-      maxRetries: 0,
-      ratedNoteUuids: new Set(),
-      recordRatedNoteUuids: function(uuids) {
-        for (const uuid of uuids || []) {
-          this.ratedNoteUuids.add(uuid);
-        }
-      },
-      retryCount: 0,
-    };
+  // --------------------------------------------------------------------------
+  // Create a SearchAgent with mocked LLM that returns confident sanity check.
+  function createSearchAgentWithMockedLlm() {
+    const app = mockApp([]);
+    const plugin = mockPlugin();
+    const searchAgent = new SearchAgent(app, plugin);
+    searchAgent.llm = jest.fn().mockResolvedValue({ confident: true });
+    return searchAgent;
   }
 
   // --------------------------------------------------------------------------
@@ -40,7 +36,7 @@ describe("Candidate evaluation (phase5 pruning)", () => {
   }
 
   it("prunes notes with score < MIN_KEEP_RESULT_SCORE or 'poor match' reasoning when good notes remain", async () => {
-    const searchAgent = stubSearchAgent();
+    const searchAgent = createSearchAgentWithMockedLlm();
     const rankedNotes = [
       createRankedCandidate("good-1", "Good", 7, "Strong match"),
       createRankedCandidate("bad-1", "Bad score", MIN_KEEP_RESULT_SCORE - 0.1, "Decent"),
@@ -52,7 +48,7 @@ describe("Candidate evaluation (phase5 pruning)", () => {
   });
 
   it("does not prune if it would remove every note", async () => {
-    const searchAgent = stubSearchAgent();
+    const searchAgent = createSearchAgentWithMockedLlm();
     const rankedNotes = [
       createRankedCandidate("only-1", "Only", MIN_KEEP_RESULT_SCORE - 0.2, "Not great"),
       createRankedCandidate("only-2", "Only2", MIN_KEEP_RESULT_SCORE - 0.8, "poor match"),
@@ -75,33 +71,33 @@ describe("Phase 4 timeout handling", () => {
   }
 
   // --------------------------------------------------------------------------
-  // Create a search agent stub with timeout-simulating LLM
-  function stubSearchAgentWithTimeoutLlm({ callTracker, progressTracker, timeoutAfterSeconds }) {
-    const agent = {
-      emitProgress: (message) => {
-        if (progressTracker) {
-          progressTracker.messages.push(message);
-        }
-      },
-      llm: async (_prompt, options = {}) => {
-        const timeoutSeconds = options.timeoutSeconds;
-        callTracker.calls.push({ timestamp: Date.now(), timeoutSeconds });
+  // Create a SearchAgent with timeout-simulating LLM
+  function createSearchAgentWithTimeoutLlm({ callTracker, progressTracker, timeoutAfterSeconds }) {
+    const app = mockApp([]);
+    const plugin = mockPlugin();
+    const searchAgent = new SearchAgent(app, plugin);
 
-        // Simulate waiting for the timeout duration, then throw timeout error
-        await new Promise((resolve, reject) => {
-          setTimeout(() => {
-            reject(new Error("Timeout"));
-          }, timeoutAfterSeconds * 1000);
-        });
-      },
-      ratedNoteUuids: new Set(),
-      recordRatedNoteUuids: function(uuids) {
-        for (const uuid of uuids || []) {
-          this.ratedNoteUuids.add(uuid);
-        }
-      },
+    // Override emitProgress to track progress messages
+    searchAgent.emitProgress = (message) => {
+      if (progressTracker) {
+        progressTracker.messages.push(message);
+      }
     };
-    return agent;
+
+    // Override llm to simulate timeout behavior
+    searchAgent.llm = async (_prompt, options = {}) => {
+      const timeoutSeconds = options.timeoutSeconds;
+      callTracker.calls.push({ timestamp: Date.now(), timeoutSeconds });
+
+      // Simulate waiting for the timeout duration, then throw timeout error
+      await new Promise((resolve, reject) => {
+        setTimeout(() => {
+          reject(new Error("Timeout"));
+        }, timeoutAfterSeconds * 1000);
+      });
+    };
+
+    return searchAgent;
   }
 
   beforeEach(() => {
@@ -126,7 +122,7 @@ describe("Phase 4 timeout handling", () => {
     const candidates = [createScoringCandidate("timeout-test-1", "Test Note")];
     const criteria = { resultCount: 10 };
 
-    const searchAgent = stubSearchAgentWithTimeoutLlm({
+    const searchAgent = createSearchAgentWithTimeoutLlm({
       callTracker, progressTracker, timeoutAfterSeconds: TEST_TIMEOUT_SECONDS });
 
     // Start the phase4 scoring (will timeout and retry)
