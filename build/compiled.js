@@ -460,6 +460,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   var MIN_KEEP_RESULT_SCORE = 5;
   var MIN_PHASE2_TARGET_CANDIDATES = 50;
   var PHASE4_TIMEOUT_SECONDS = 60;
+  var POLLING_INTERVAL_EMBED_MILLISECONDS = 1500;
   var PRE_CONTENT_MAX_SCORE_PER_KEYWORD = 10;
   var PRE_CONTENT_MIN_PRIMARY_SCORE = 0.5;
   var PRE_CONTENT_MIN_SECONDARY_SCORE = 0.2;
@@ -2233,7 +2234,7 @@ Will be utilized after your preliminary approval`,
     });
   }
 
-  // lib/functions/search/candidate-evaluation.js
+  // lib/functions/search/final-evaluation.js
   var LLM_SCORE_BODY_CONTENT_LENGTH = 3e3;
   var MAX_NOTES_PER_RANKING = 10;
   var MIN_ACCEPT_SCORE = 8;
@@ -2271,14 +2272,21 @@ Will be utilized after your preliminary approval`,
     const pruneResult = rankedNotesAfterRemovingPoorMatches(rankedNotes);
     if (pruneResult.removedCount) {
       rankedNotes = pruneResult.rankedNotes;
-      console.log(`Pruned ${pluralize(pruneResult.removedCount, "low quality result")} (score < ${MIN_KEEP_RESULT_SCORE} or "poor match"), leaving ${pruneResult.rankedNotes.length} notes:`, rankedNotes.map((n) => debugData(n)));
+      console.log(`[Phase 5] Pruned ${pluralize(pruneResult.removedCount, "low quality result")} (score < ${MIN_KEEP_RESULT_SCORE} or "poor match"), leaving ${pruneResult.rankedNotes.length} notes:`, rankedNotes.map((n) => debugData(n)));
     } else {
-      console.log(`No results pruned among ${rankedNotes.length} candidates:`, rankedNotes.map((n) => debugData(n)));
+      console.log(`[Phase 5] No results pruned among ${rankedNotes.length} candidates:`, rankedNotes.map((n) => debugData(n)));
     }
     const topResult = rankedNotes[0];
-    if (topResult.finalScore >= MIN_ACCEPT_SCORE) {
-      searchAgent.emitProgress(`Found ${topResult.finalScore}/10 match, returning up to ${pluralize(criteria.resultCount, "result")} (type ${typeof criteria.resultCount})`);
+    const enoughDesiredResults = rankedNotes.length >= criteria.resultCount * 0.5;
+    const warrantsNextAttempt = !enoughDesiredResults && searchAgent.retryCount === 0;
+    if (topResult.finalScore >= MIN_ACCEPT_SCORE && warrantsNextAttempt) {
+      searchAgent.emitProgress(`[Phase 5] Found ${Math.min(topResult.finalScore, 10)}/10 match, returning up to ${pluralize(criteria.resultCount, "result")} (type ${typeof criteria.resultCount})`);
       return searchAgent.formatResult(true, rankedNotes, criteria.resultCount);
+    } else if (warrantsNextAttempt) {
+      return searchAgent.nextSearchAttempt(userQuery, criteria);
+    } else if (searchAgent.retryCount === searchAgent.maxRetries) {
+      searchAgent.emitProgress(`Search completed with ${pluralize(criteria.resultCount, "final result")}`);
+      return searchAgent.formatResult(!!rankedNotes.length, rankedNotes, criteria.resultCount);
     }
     const sanityPrompt = `
 Original query: "${userQuery}"
@@ -2286,7 +2294,8 @@ Original query: "${userQuery}"
 Top recommended note:
 - Title: "${topResult.name}"
 - Score: ${topResult.finalScore}/10
-- Tags: ${topResult.tags.join(", ") || "none"}
+- Tags: ${topResult.tags.join(", ") || "none"}${topResult.checks ? `
+- Criteria checks: ${JSON.stringify(topResult.checks)}` : ""}
 - Reasoning: ${topResult.scoreBreakdown.reasoning}
 
 Does this genuinely seem like what the user is looking for?
@@ -2490,7 +2499,7 @@ No notes matched the search criteria.
       const searchResultTag = searchAgent.summaryNoteTag();
       const localUuid = await searchAgent.app.createNote(noteTitle.trim(), [searchResultTag].filter(Boolean));
       const summaryNoteHandle = await searchAgent.app.findNote(localUuid);
-      console.log(`Created ${localUuid} which translates to`, summaryNoteHandle);
+      console.log(`Created ${JSON.stringify(localUuid)} which translates to ${debugData(summaryNoteHandle)}`);
       await searchAgent.app.replaceNoteContent(summaryNoteHandle, noteContent);
       return {
         uuid: summaryNoteHandle.uuid,
@@ -3023,22 +3032,22 @@ No notes matched the search criteria.
     const preliminaryRanked = rankPreliminary(candidates);
     const topCandidates = preliminaryRanked.slice(0, MAX_DEEP_ANALYZED_NOTES);
     if (!hasDeepAnalysisCriteria(criteria)) {
-      console.log("No deep analysis criteria specified, skipping criteria confirmation phase");
+      console.log("No exclusionary criteria specified, skipping criteria confirmation phase");
       return { validCandidates: topCandidates, allAnalyzed: topCandidates };
     }
-    console.log(`Deep analyzing top ${Math.min(MAX_DEEP_ANALYZED_NOTES, candidates.length)} of ${candidates.length} candidates`);
-    const deepAnalyzedNotes = await searchAgent.parallelLimit(
+    console.log(`Criteria analyzing top ${candidates.length} candidates`);
+    const criteriaAnalyzedNotes = await searchAgent.parallelLimit(
       topCandidates.map((note) => () => analyzeNoteCriteriaMatch(note, searchAgent, criteria)),
       MAX_SEARCH_CONCURRENCY
     );
-    if (deepAnalyzedNotes.length !== topCandidates.length) {
+    if (criteriaAnalyzedNotes.length !== topCandidates.length) {
       if (searchAgent.plugin.constants.isTestEnvironment) {
         throw new Error("Deep analyzed notes count mismatch in test environment");
       } else {
-        console.warn("Warning: Deep analyzed notes count mismatch:", { expected: topCandidates.length, actual: deepAnalyzedNotes.length });
+        console.warn("Warning: Deep analyzed notes count mismatch:", { expected: topCandidates.length, actual: criteriaAnalyzedNotes.length });
       }
     }
-    const validCandidates = deepAnalyzedNotes.filter((note) => {
+    const validCandidates = criteriaAnalyzedNotes.filter((note) => {
       const { checks } = note;
       const requiredTags = requiredTagsFromTagRequirement(criteria.tagRequirement);
       if (criteria.booleanRequirements.containsPDF && !checks.hasPDF)
@@ -3055,7 +3064,7 @@ No notes matched the search criteria.
     });
     console.log(`${validCandidates.length} candidates passed criteria checks among ${candidates.length} candidates`);
     searchAgent.emitProgress(`${validCandidates.length} notes match all criteria`);
-    return { validCandidates, allAnalyzed: deepAnalyzedNotes };
+    return { validCandidates, allAnalyzed: criteriaAnalyzedNotes };
   }
   async function analyzeNoteCriteriaMatch(noteCandidate, searchAgent, searchParams) {
     const checks = {};
@@ -3141,7 +3150,7 @@ No notes matched the search criteria.
         mustHave: options.tagRequirement?.mustHave || null,
         preferred: options.tagRequirement?.preferred || null
       };
-      this.resultCount = options.resultCount || 1;
+      this.resultCount = options.resultCount || DEFAULT_SEARCH_NOTES_RETURNED;
     }
     // --------------------------------------------------------------------------
     // Legacy compatibility: Allow accessing as .criteria for backward compatibility
@@ -3233,13 +3242,13 @@ Extract:
    - Examples of BAD primary keywords: ["credit", "card", "note"] (should be "credit card" and not generic words)
 
 2. SECONDARY_KEYWORDS: 5-10 additional keywords likely in note content
-   - Same two-word pair preference applies here
-   - Include category terms (e.g., "financial document" for credit card topics, "outreach" or "distribution" for marketing topics)
+   - PREFER distinct single words, or two-word pairs that refer to a concept 
+   - Include category terms (e.g., "financial" for credit card topics, "outreach" or "distribution" for marketing topics)
    - Include synonyms or abbreviations (e.g., "NY" for "New York", "ML" for "machine learning")
    - Include single-word fallbacks from primary keyword phrases to catch partial matches (e.g., if "gift ideas" is user query, include "gift" to catch any notes like "2019 gifts")
    - Return all keywords in singular form (e.g., "document" not "documents")
-   - Examples: ["interest rate", "billing cycle", "cash back", "reward point"]
-   - Example for "gift ideas" query: ["gift", "birthday", "holiday", "christmas", "shopping list", "wishlist", "wish list"]
+   - Examples: ["interest rate", "billing", "cash back", "reward"]
+   - Example for "gift ideas" query: ["gift", "birthday", "holiday", "christmas", "shopping", "wishlist", "wish list"]
 
 3. EXACT_PHRASE: If user wants exact text match, extract it (or null)
 
@@ -3256,6 +3265,11 @@ Extract:
    - mustHave: Tag that MUST be present (null if none required)
    - preferred: Tag that's PREFERRED but not required (null if none)
 
+7. RESULT_COUNT:
+   - null (default): If user didn't specify quantity or implies general search
+   - 1: If user requests a specific single note (e.g. "the note that...", "find the receipt")
+   - N: If user requests specific number (e.g. "top 3 notes", "5 recipes")
+
 Return ONLY valid JSON:
 {
   "primaryKeywords": ["two word", "keyword pair", "single"],
@@ -3271,6 +3285,7 @@ Return ONLY valid JSON:
     "mustHave": null,
     "preferred": null
   },
+  "resultCount": null
 }
 `;
     const validateCriteria = (result) => {
@@ -3289,6 +3304,14 @@ Return ONLY valid JSON:
 
   // lib/functions/search-agent.js
   var MAX_SEARCH_AGENT_LLM_QUERY_RETRIES = 3;
+  var PROGRESS_RECEIVED_INPUT = 5;
+  var PROGRESS_PHASE1_COMPLETE = 10;
+  var PROGRESS_PHASE2_COMPLETE = 30;
+  var PROGRESS_PHASE3_COMPLETE = 40;
+  var PROGRESS_PHASE4_COMPLETE = 55;
+  var PROGRESS_PHASE5_COMPLETE = 100;
+  var PROGRESS_RETRY_PHASE2_COMPLETE = 70;
+  var PROGRESS_RETRY_PHASE4_COMPLETE = 85;
   var SearchAgent = class {
     // --------------------------------------------------------------------------
     constructor(app, plugin2) {
@@ -3300,6 +3323,7 @@ Return ONLY valid JSON:
       this.preferredAiModel = null;
       this.plugin = plugin2;
       this.progressCallback = null;
+      this.progressPercentage = 0;
       this.ratedNoteUuids = /* @__PURE__ */ new Set();
       this.retryCount = 0;
       this.searchAttempt = ATTEMPT_FIRST_PASS;
@@ -3325,13 +3349,18 @@ Return ONLY valid JSON:
     // @returns {Promise<SearchResult>} Search result with found notes, confidence scores, and summary note
     async search(userQuery, { criteria = {}, options = {} } = {}) {
       try {
-        this.emitProgress("Starting search analysis...");
+        this.emitProgress("Starting search analysis...", PROGRESS_RECEIVED_INPUT);
         const searchCriteria = Object.keys(criteria).length ? criteria : await phase1_analyzeQuery(this, userQuery, options);
+        this.emitProgress("Query analysis complete", PROGRESS_PHASE1_COMPLETE);
         const candidates = await phase2_collectCandidates(this, searchCriteria);
+        const phase2Percentage = this.retryCount > 0 ? PROGRESS_RETRY_PHASE2_COMPLETE : PROGRESS_PHASE2_COMPLETE;
+        this.emitProgress(`Candidate collection complete`, phase2Percentage);
         if (candidates.length === 0) {
+          this.emitProgress("No candidates found", PROGRESS_PHASE5_COMPLETE);
           return this.handleNoResults(searchCriteria);
         }
         const { validCandidates, allAnalyzed } = await phase3_criteriaConfirm(this, candidates, searchCriteria);
+        this.emitProgress(`Criteria confirmation complete`, PROGRESS_PHASE3_COMPLETE);
         let rankedNotes;
         if (validCandidates.length === 0 && this.retryCount < this.maxRetries) {
           return this.nextSearchAttempt(userQuery, searchCriteria);
@@ -3343,17 +3372,21 @@ Return ONLY valid JSON:
         } else {
           rankedNotes = [];
         }
+        const phase4Percentage = this.retryCount > 0 ? PROGRESS_RETRY_PHASE4_COMPLETE : PROGRESS_PHASE4_COMPLETE;
+        this.emitProgress(`Scoring complete`, phase4Percentage);
         const finalResult = await phase5_sanityCheck(this, rankedNotes, searchCriteria, userQuery);
         this.emitProgress(`Creating search summary note for ${pluralize(finalResult.notes.length, "result")}...`);
         const summaryNote = await createSearchSummaryNote(this, finalResult, searchCriteria, userQuery);
         if (summaryNote) {
           finalResult.summaryNote = summaryNote;
-          this.emitProgress(`Created search summary note: <a href="${summaryNote.url}">${summaryNote.name}</a>`);
+          this.emitProgress(`Created search summary note: <a href="${summaryNote.url}">${summaryNote.name}</a>`, PROGRESS_PHASE5_COMPLETE);
+        } else {
+          this.emitProgress(`Search complete`, PROGRESS_PHASE5_COMPLETE);
         }
         return finalResult;
       } catch (error) {
         console.error("Caught error during search:", error);
-        this.emitProgress(`Error attempting to retrieve AI search results: "${error}"`);
+        this.emitProgress(`Error attempting to retrieve AI search results: "${error}"`, PROGRESS_PHASE5_COMPLETE);
         return {
           found: false,
           error: error.message,
@@ -3362,13 +3395,20 @@ Return ONLY valid JSON:
       }
     }
     // --------------------------------------------------------------------------
-    emitProgress(message) {
+    // Emit a progress message that will be displayed in the embed.
+    // The message is passed to the progressCallback which updates plugin.progressText.
+    // The embed polls for this text via onEmbedCall("getProgress").
+    //
+    // @param {string} message - The progress message to display
+    // @param {number} [progressPercentage] - Optional progress percentage (0-100)
+    emitProgress(message, progressPercentage) {
+      if (progressPercentage) {
+        this.progressPercentage = progressPercentage;
+      }
       if (this.progressCallback) {
         this.progressCallback(message);
       }
-      this.app.openEmbed();
-      this.app.context.updateEmbedArgs = { lastSearchAgentMessage: message };
-      console.log(`[SearchAgent#emitProgress] ${message}`);
+      console.log(`[SearchAgent#emitProgress] ${progressPercentage ? `[${progressPercentage}%] ` : ""}${message}`);
     }
     // --------------------------------------------------------------------------
     // Format the final search result object
@@ -3705,7 +3745,11 @@ ${taskArray.join("\n")}`);
   }
 
   // lib/render-embed.js
+  var INITIAL_POLLING_DELAY = 100;
+  var PROGRESS_BAR_HEIGHT_PIXELS = 60;
   function renderPluginEmbed(app, plugin2, renderArguments) {
+    const initialContent = plugin2.progressText || "Loading...";
+    const initialPercentage = plugin2.progressPercentage() || 0;
     return `
     <html lang="en">
       <head>
@@ -3714,20 +3758,128 @@ ${taskArray.join("\n")}`);
             background-color: #fff;
             color: #333;
             padding: 10px;
+            margin: 0;
+          }
+          
+          .progress-bar-container {
+            width: 100%;
+            max-width: 600px;
+            height: ${PROGRESS_BAR_HEIGHT_PIXELS}px;
+            margin: 0 auto 20px auto;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+          }
+          
+          .progress-bar-wrapper {
+            width: 100%;
+            height: 12px;
+            background: linear-gradient(to right, #e8eaed, #f1f3f4);
+            border-radius: 6px;
+            overflow: hidden;
+            box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+          }
+          
+          .progress-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4285f4, #34a853);
+            border-radius: 6px;
+            transition: width 0.4s ease-out;
+            box-shadow: 0 1px 2px rgba(66, 133, 244, 0.3);
+          }
+          
+          .progress-percentage-text {
+            margin-top: 8px;
+            font-family: "Roboto Mono", monospace;
+            font-size: 14px;
+            font-weight: 500;
+            color: #5f6368;
           }
           
           .plugin-embed-container {
             font-family: "Roboto", sans-serif;
+            line-height: 1.5;
+          }
+          
+          .plugin-embed-container a {
+            color: #1a73e8;
+            text-decoration: none;
+          }
+          
+          .plugin-embed-container a:hover {
+            text-decoration: underline;
           }
         </style>
       </head>
       <body>
+        <div class="progress-bar-container">
+          <div class="progress-bar-wrapper">
+            <div class="progress-bar-fill" id="progress-bar-fill" style="width: ${initialPercentage}%"></div>
+          </div>
+          <div class="progress-percentage-text" id="progress-percentage-text">${initialPercentage}% complete</div>
+        </div>
         <div class="plugin-embed-container" 
+          id="progress-content"
           data-args="${typeof renderArguments === "object" ? JSON.stringify(renderArguments) : renderArguments}" 
           data-rendered-at="${(/* @__PURE__ */ new Date()).toISOString()}"
         >
-          ${plugin2.progressText}
+          ${initialContent}
         </div>
+        <script type="text/javascript">
+          (function() {
+            let lastContent = "";
+            let lastPercentage = ${initialPercentage};
+            let pollingActive = true;
+            
+            function updateProgressBar(percentage) {
+              if (percentage !== lastPercentage) {
+                lastPercentage = percentage;
+                document.getElementById("progress-bar-fill").style.width = percentage + "%";
+                document.getElementById("progress-percentage-text").textContent = percentage + "% complete";
+              }
+            }
+            
+            function pollForUpdates() {
+              if (!pollingActive) return;
+              
+              window.callAmplenotePlugin("getProgress").then(function(result) {
+                if (result) {
+                  // Handle both new object format and legacy string format
+                  var text = typeof result === "object" ? result.text : result;
+                  var percentage = typeof result === "object" ? (result.percentage || 0) : 0;
+                  
+                  if (text && text !== lastContent) {
+                    lastContent = text;
+                    document.getElementById("progress-content").innerHTML = text;
+                  }
+                  
+                  updateProgressBar(percentage);
+                }
+                
+                if (pollingActive) {
+                  setTimeout(pollForUpdates, ${POLLING_INTERVAL_EMBED_MILLISECONDS});
+                }
+              }).catch(function(error) {
+                console.error("Error polling for progress:", error);
+                if (pollingActive) {
+                  setTimeout(pollForUpdates, ${POLLING_INTERVAL_EMBED_MILLISECONDS});
+                }
+              });
+            }
+            
+            // Start polling after a short delay to ensure embed is fully loaded
+            setTimeout(pollForUpdates, ${INITIAL_POLLING_DELAY});
+            
+            // Stop polling when page is hidden/closed
+            document.addEventListener("visibilitychange", function() {
+              pollingActive = !document.hidden;
+              if (pollingActive) {
+                pollForUpdates();
+              }
+            });
+          })();
+        </script>
       </body>
     </html>
   `;
@@ -3750,6 +3902,7 @@ ${taskArray.join("\n")}`);
     noFallbackModels: false,
     ollamaModelsFound: null,
     progressText: "",
+    searchAgent: null,
     // --------------------------------------------------------------------------
     appOption: {
       // --------------------------------------------------------------------------
@@ -3785,7 +3938,7 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
       },
       // --------------------------------------------------------------------------
       [SEARCH_USING_AGENT_LABEL]: async function(app) {
-        const searchAgent = new SearchAgent(app, this);
+        this.searchAgent = new SearchAgent(app, this);
         const result = await userSearchCriteria(app);
         if (!result)
           return;
@@ -3794,17 +3947,17 @@ Preferred models are now set to "${preferredModels2.join(`", "`)}".` : ""}`);
         if (!userQuery?.length)
           return;
         this.progressText = "";
-        searchAgent.onProgress((progressText) => {
+        this.searchAgent.onProgress((progressText) => {
           this.progressText += `${progressText}<br /><br />`;
         });
         if (preferredAiModel) {
-          searchAgent.setPreferredAiModel(preferredAiModel);
+          this.searchAgent.setPreferredAiModel(preferredAiModel);
         }
-        searchAgent.emitProgress(`Starting search for user query: "${userQuery}" with ${preferredAiModel ? `preferred AI model "${preferredAiModel}"` : "no preferred AI model"}. ` + (changedSince ? `Filtering to notes changed since ${changedSince}. ` : "") + (onlyTags?.length ? `Filtering to notes with tags: ${onlyTags.join(", ")}. ` : "") + (maxNotesCount ? `Limiting to ${maxNotesCount} notes. ` : `Returning up to ${DEFAULT_SEARCH_NOTES_RETURNED} notes. `));
+        this.searchAgent.emitProgress(`Starting search for user query: "${userQuery}" with ${preferredAiModel ? `preferred AI model "${preferredAiModel}"` : "no preferred AI model"}. ` + (changedSince ? `Filtering to notes changed since ${changedSince}. ` : "") + (onlyTags?.length ? `Filtering to notes with tags: ${onlyTags.join(", ")}. ` : "") + (maxNotesCount ? `Limiting to ${maxNotesCount} notes. ` : `Returning up to ${DEFAULT_SEARCH_NOTES_RETURNED} notes. `));
         await app.openEmbed();
-        await searchAgent.search(userQuery, { options: {
+        await this.searchAgent.search(userQuery, { options: {
           dateFilter: { after: changedSince },
-          resultCount: maxNotesCount || DEFAULT_SEARCH_NOTES_RETURNED,
+          resultCount: maxNotesCount,
           tagRequirement: { mustHave: onlyTags }
         } });
       },
@@ -3978,6 +4131,31 @@ ${callCountByModelText}
           return await this._wordReplacer(app, text, "thesaurus");
         }
       }
+    },
+    // --------------------------------------------------------------------------
+    // Handles calls from the embed iframe via window.callAmplenotePlugin().
+    // Used by the polling mechanism in renderEmbed to fetch the latest progress text.
+    //
+    // @param {object} app - Amplenote app object
+    // @param {string} action - The action to perform (e.g., "getProgress")
+    // @returns {Object|null} Progress data object for "getProgress", or null for unknown actions
+    onEmbedCall(app, action) {
+      if (action === "getProgress") {
+        return {
+          percentage: this.progressPercentage(),
+          text: this.progressText || ""
+        };
+      }
+      return null;
+    },
+    // --------------------------------------------------------------------------
+    // Get the current progress percentage from the active search agent.
+    // @returns {number|null} Progress percentage (0-100) or null if no search active
+    progressPercentage() {
+      if (this.searchAgent) {
+        return this.searchAgent.progressPercentage;
+      }
+      return null;
     },
     // --------------------------------------------------------------------------
     async renderEmbed(app, ...args) {
