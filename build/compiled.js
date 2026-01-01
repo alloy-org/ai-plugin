@@ -233,6 +233,7 @@ END
   var DALL_E_DEFAULT = "1024x1024~dall-e-3";
   var DEFAULT_MODEL_TOKEN_LIMIT = 50 * KILOBYTE * TOKEN_CHARACTERS;
   var LOOK_UP_OLLAMA_MODEL_ACTION_LABEL = "Look up available Ollama models";
+  var MAX_CANDIDATE_MODELS = 5;
   var MIN_API_KEY_CHARACTERS = {
     anthropic: 80,
     // sk-ant-api03- prefix + long string
@@ -630,12 +631,14 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
   function useLongContentContext(promptKey) {
     return ["continue", "insertTextComplete"].includes(promptKey);
   }
-  function limitContextLines(aiModel, _promptKey) {
+  function limitContextLines(aiModel, promptKey) {
+    if (useLongContentContext(promptKey))
+      return false;
     return !/(gpt-4|gpt-3)/.test(aiModel);
   }
   function tooDumbForExample(aiModel) {
-    const smartModel = ["mistral"].includes(aiModel) || aiModel.includes("gpt-4");
-    return !smartModel;
+    const smartModelPattern = /(gpt-4|gpt-5|claude|gemini|grok|deepseek|mistral|o3|o4)/i;
+    return !smartModelPattern.test(aiModel);
   }
   function frequencyPenaltyFromPromptKey(promptKey) {
     if (["rhyming", "suggestTasks", "thesaurus"].find((key) => key === promptKey)) {
@@ -1521,7 +1524,7 @@ ${PROVIDER_API_KEY_RETRIEVE_URL.perplexity}`
     }
     let boundedContent = noteContent || "";
     const longContent = useLongContentContext(promptKey);
-    const noteContentCharacterLimit = Math.min(inputLimit * 0.5, longContent ? 5e3 : 1e3);
+    const noteContentCharacterLimit = Math.min(inputLimit * 0.5, longContent ? 1e4 : 1e3);
     boundedContent = boundedContent.replace(/<!--\s\{[^}]+\}\s-->/g, "");
     if (noteContent && noteContent.length > noteContentCharacterLimit) {
       boundedContent = relevantContentFromContent(noteContent, contentIndex, noteContentCharacterLimit);
@@ -1673,15 +1676,16 @@ ${noteContent}`,
   function userPromptFromPromptKey(promptKey, promptParams) {
     let userPrompts;
     if (["continue", "insertTextComplete", "replaceTextComplete"].find((key) => key === promptKey)) {
-      const { noteContent } = promptParams;
+      const { noteContent, suppressExample } = promptParams;
       let tokenAndSurroundingContent;
       if (promptKey === "replaceTextComplete") {
         tokenAndSurroundingContent = promptParams.text;
       } else {
-        const replaceToken = promptKey === "insertTextComplete" ? `${PLUGIN_NAME}: Complete` : `${PLUGIN_NAME}: Continue`;
-        console.debug("Note content", noteContent, "replace token", replaceToken);
+        const actionWord = promptKey === "insertTextComplete" ? "Complete" : "Continue";
+        const replaceTokenPattern = new RegExp(`\\{\\s*${PLUGIN_NAME}\\s*:\\s*${actionWord}\\s*\\}`, "g");
+        console.debug("Note content", noteContent, "replace token pattern", replaceTokenPattern);
         tokenAndSurroundingContent = `~~~
-${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
+${noteContent.replace(replaceTokenPattern, "<replaceToken>")}
 ~~~`;
       }
       userPrompts = [
@@ -1690,6 +1694,14 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
         `Your response should be grammatically correct and not repeat the markdown document. DO NOT explain your answer.`,
         `Most importantly, DO NOT respond with <replaceToken> itself and DO NOT repeat word sequences from the markdown document. BE CONCISE.`
       ];
+      if (!suppressExample) {
+        userPrompts.push(JSON.stringify({
+          example: {
+            input: "January 2025\n\nFebruary 2025\n\n<replaceToken>",
+            response: "March 2025\n\nApril 2025\n\nMay 2025\n\nJune 2025\n\nJuly 2025\n\nAugust 2025\n\nSeptember 2025\n\nOctober 2025\n\nNovember 2025\n\nDecember 2025"
+          }
+        }));
+      }
     } else {
       userPrompts = messageArrayFromPrompt(promptKey, promptParams);
       if (promptParams.suppressExample && userPrompts[0]?.includes("example")) {
@@ -1749,7 +1761,6 @@ ${noteContent.replace(`{${replaceToken}}`, "<replaceToken>")}
   }
 
   // lib/model-picker.js
-  var MAX_CANDIDATE_MODELS = 3;
   async function notePromptResponse(plugin2, app, noteUUID, promptKey, promptParams, {
     preferredModels: preferredModels2 = null,
     confirmInsert = true,
