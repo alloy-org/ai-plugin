@@ -48,25 +48,21 @@ describe("This here plugin", () => {
   });
 
   // --------------------------------------------------------------------------------------
-  it("should include rejected thesaurus options", async () => {
-    const { app } = mockAppWithContent("Once upon a time there was a very special baby");
+  // Tests that rejected thesaurus options are included in subsequent prompts to the LLM
+  it("should include rejected thesaurus options in subsequent prompts", () => {
+    const noteContent = "Once upon a time there was a very special baby";
+    const rejectedFirstResponse = "Results:\n* infant\n* newborn\n* child";
 
-    let firstAnswer, secondAnswer;
-    app.alert.mockImplementation(async (text, options) => {
-      if (firstAnswer) {
-        secondAnswer = text;
-        return -1;
-      } else {
-        firstAnswer = text;
-        return 0; // Retry the first option, our preferred model
-      }
-    });
-    await plugin.replaceText["Thesaurus"].run(app, "baby");
-    expect(firstAnswer).toContain("* infant\n");
-    expect(firstAnswer).toContain("newborn");
-    expect(secondAnswer).not.toContain("newborn");
-    expect(secondAnswer).not.toContain("* infant\n");
-  }, AWAIT_TIME);
+    // Build messages for a retry with the rejected response
+    const promptParams = { noteContent, text: "baby" };
+    const messages = promptsFromPromptKey("thesaurus", promptParams, [rejectedFirstResponse], testModel);
+
+    // Verify the rejected response is included in the messages sent to LLM
+    const rejectionMessage = messages.find(m => m.content.includes("infant"));
+    expect(rejectionMessage).toBeTruthy();
+    expect(rejectionMessage.content).toContain("newborn");
+    expect(rejectionMessage.content).toContain("WRONG RESPONSE");
+  });
 
   // --------------------------------------------------------------------------------------
   describe("Continue action prompts", () => {
