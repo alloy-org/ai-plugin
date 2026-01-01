@@ -15,6 +15,9 @@ describe("This here plugin", () => {
   console.log(`Running prompt-build tests with model: ${ testModel } (provider: ${ providerName })`);
 
   // --------------------------------------------------------------------------------------
+  // Tests that task UUIDs are stripped before sending to AI. In production, sendQuery calls
+  // contentfulPromptParams (which strips UUIDs) then promptsFromPromptKey (which builds messages).
+  // We test these two functions directly to avoid making actual API calls.
   it("should not submit task uuids", async () => {
     const noteContent = `- [ ] To be, or not to be, that is the {${ plugin.constants.pluginName }: Continue<!-- {\\"uuid\\":\\"afc94f1f-942b-4dd4-b960-d205f6e4bc4c\\"} -->
     - [ ] Or so you think<!-- {\"uuid\":\"afc94f1f-942b-4dd4-b960-d205f6e4bc4c\"} -->
@@ -25,11 +28,10 @@ describe("This here plugin", () => {
 
     for (const promptKey of ["summarize", "thesaurus", "complete"]) {
       console.debug("Expecting", promptKey, "submitted content not to contain the task UUID");
-      // Use contentfulPromptParams to properly strip UUIDs from note content
       const promptParams = await contentfulPromptParams(app, note.uuid, promptKey, {}, testModel);
       const messages = promptsFromPromptKey(promptKey, promptParams, [], testModel);
       for (const message of messages) {
-        expect(message.content).not.toContain("afc94f1f"); // Ensure the task UUID has been stripped before submitting to internets
+        expect(message.content).not.toContain("afc94f1f");
       }
     }
   })
